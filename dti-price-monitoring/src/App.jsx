@@ -2,7 +2,9 @@ import React, { useEffect, useState } from "react";
 import { addPriceData, getPriceData } from './services/priceService.js';
 import Dashboard from './components/Dashboard.jsx';
 import Monitoring from './components/Monitoring.jsx';
+import Inquiry from "./components/Inquiry.jsx";
 import Analysis from './components/Analysis.jsx';
+import ComparativeAnalysis from './components/ComparativeAnalysis.jsx';
 // Optional: npm install lucide-react
 import { LayoutDashboard, Activity, FileSearch, Menu as MenuIcon } from 'lucide-react';
 
@@ -134,6 +136,12 @@ function App() {
           <button style={navItemStyle(activeTab === "analysis")} onClick={() => setActiveTab("analysis")}>
             <FileSearch size={18} /> Price Analysis
           </button>
+          <button style={navItemStyle(activeTab === "inquiry")} onClick={() => setActiveTab("inquiry")}>
+            <FileSearch size={18} /> Letter of Inquiry
+          </button>
+          <button style={navItemStyle(activeTab === "comparative")} onClick={() => setActiveTab("comparative")}>
+            <FileSearch size={18} /> Comparative Analysis
+          </button>
         </div>
 
         <div style={{ padding: "20px", borderTop: "1px solid #1e293b", fontSize: "0.75rem", color: "#475569" }}>
@@ -160,6 +168,8 @@ function App() {
           {activeTab === "dashboard" && <Dashboard prices={prices} />}
           {activeTab === "monitoring" && <Monitoring prices={prices} form={form} handleChange={handleChange} handleSave={handleSave} />}
           {activeTab === "analysis" && <Analysis prevailingReport={prevailingReport} />}
+          {activeTab === "inquiry" && <Inquiry prices={prices} />}
+          {activeTab === "comparative" && <ComparativeAnalysis prices={prices} prevailingReport={prevailingReport} />}
         </div>
       </div>
     </div>
