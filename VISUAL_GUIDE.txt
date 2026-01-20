@@ -1,0 +1,154 @@
+/* Quick Styling Guide for New Features */
+
+/* ============================================
+   COMPARATIVE ANALYSIS TAB
+   ============================================ */
+
+Summary Cards (Top Row):
+┌─────────────────┬─────────────────┬─────────────────┐
+│ ↑ INCREASES     │ ↓ DECREASES     │ ─ STABLE        │
+│   Red Badge     │   Green Badge   │   Gray Badge    │
+│   Count: XX     │   Count: XX     │   Count: XX     │
+└─────────────────┴─────────────────┴─────────────────┘
+
+Main Table:
+┌──────────────────────────────────────────────────────────────────┐
+│  Comparative Price Analysis by Store & Commodity                 │
+│  [Commodity Filter ▼] [Store Filter ▼]                          │
+├─────────┬────────┬────────┬──────┬─────┬────────┬────────┬──────┤
+│COMMODITY│ STORE  │  CITY  │ PREV │ NOW │CHANGE ₱│CHANGE %│STATUS│
+├─────────┼────────┼────────┼──────┼─────┼────────┼────────┼──────┤
+│  Rice   │SaveMre │Quezon  │45.00 │48.00│ ↑+3.00 │ +6.7%  │● Inc │
+│  Sugar  │SM Mart │Manila  │85.00 │82.00│ ↓-3.00 │ -3.5%  │● Dec │
+│  Eggs   │Puregold│Caloocan│120.00│120.0│ ─ 0.00 │  0.0%  │● Stb │
+└─────────┴────────┴────────┴──────┴─────┴────────┴────────┴──────┘
+
+Color Coding:
+- ↑ Red icon + text = Price Increased
+- ↓ Green icon + text = Price Decreased  
+- ─ Gray icon + text = Price Stable
+
+Features:
+✓ Sortable by price change magnitude
+✓ Filter by commodity
+✓ Filter by store
+✓ Shows municipality/city
+✓ Percentage and absolute changes
+✓ Visual status badges
+
+
+/* ============================================
+   PRICE TRENDS TAB
+   ============================================ */
+
+Statistics Panel (Top Row):
+┌─────────────┬─────────────┬─────────────┬─────────────┐
+│ PREVAILING  │   AVERAGE   │   LOWEST    │   HIGHEST   │
+│ ₱XX.XX      │   ₱XX.XX    │   ₱XX.XX    │   ₱XX.XX    │
+│ (Blue)      │   (Gray)    │   (Green)   │   (Red)     │
+└─────────────┴─────────────┴─────────────┴─────────────┘
+
+Interactive Line Chart:
+┌──────────────────────────────────────────────────────────┐
+│  Price Trend Visualization by Municipality/City          │
+│  [Commodity: Rice ▼] [Municipality: All ▼]              │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  ₱                                                       │
+│  50│        ╱──── Store A (Manila)                      │
+│  48│    ╱──╯                                            │
+│  46│───╯          ╱────── Store B (Quezon)             │
+│  44│         ╱───╯                                      │
+│  42│    ╱───╯                                           │
+│  40└────┼────┼────┼────┼────┼────                      │
+│      Jan15 Jan18 Jan21 Jan24 Jan27 Jan30              │
+│                                                          │
+│  Legend: ━ Store A (Blue) ━ Store B (Red)              │
+└──────────────────────────────────────────────────────────┘
+
+Municipality Comparison Cards (Bottom - when "All" selected):
+┌───────────────┬───────────────┬───────────────┬───────────────┐
+│ 📍 Manila     │ 📍 Quezon     │ 📍 Caloocan   │ 📍 Makati     │
+│   ₱45.50      │   ₱47.20      │   ₱46.80      │   ₱48.30      │
+│   3 stores    │   2 stores    │   4 stores    │   5 stores    │
+└───────────────┴───────────────┴───────────────┴───────────────┘
+
+Features:
+✓ Multi-line trend chart (one line per store)
+✓ Commodity selector
+✓ Municipality filter
+✓ Interactive tooltips on hover
+✓ Price statistics (prevailing, avg, min, max)
+✓ Color-coded lines for different stores
+✓ Location-based comparison cards
+✓ Responsive chart sizing
+
+
+/* ============================================
+   NAVIGATION UPDATE
+   ============================================ */
+
+Sidebar Navigation (Updated):
+┌─────────────────────────┐
+│  DTI MONITOR            │
+├─────────────────────────┤
+│  📊 Dashboard           │
+│  📈 Monitoring          │
+│  🔍 Price Analysis      │
+│  📊 Comparative Analysis│ ← NEW!
+│  📉 Price Trends        │ ← NEW!
+└─────────────────────────┘
+
+
+/* ============================================
+   DATA FLOW
+   ============================================ */
+
+Input (Monitoring Tab):
+- Commodity, Store, Municipality, Price, Previous Price, SRP
+        ↓
+MongoDB Database
+        ↓
+        ├──→ Dashboard (Overview stats)
+        ├──→ Monitoring (Data entry + current visualizations)
+        ├──→ Price Analysis (Prevailing price calculations)
+        ├──→ Comparative Analysis ← NEW! (Store x Commodity comparison)
+        └──→ Price Trends ← NEW! (Geographic + temporal trends)
+
+
+/* ============================================
+   KEY DIFFERENTIATORS
+   ============================================ */
+
+Comparative Analysis:
+- Focus: Store-by-store comparison
+- View: Tabular with sorting
+- Metric: Price changes (increase/decrease)
+- Best for: Identifying which stores changed prices
+
+Price Trends:
+- Focus: Time-based trends
+- View: Graphical (line charts)
+- Metric: Prevailing prices over time
+- Best for: Spotting price movement patterns by location
+
+
+/* ============================================
+   RESPONSIVE BEHAVIOR
+   ============================================ */
+
+Desktop (1200px+):
+- Full table width
+- 4-column statistics
+- Large interactive chart
+
+Tablet (768px-1199px):
+- Horizontal scroll on table
+- 2x2 grid for statistics
+- Responsive chart
+
+Mobile (< 768px):
+- Card-based layout
+- Stacked statistics
+- Simplified chart with touch interactions
+*/
