@@ -3,8 +3,9 @@ import { addPriceData, getPriceData } from './services/priceService.js';
 import Dashboard from './components/Dashboard.jsx';
 import Monitoring from './components/Monitoring.jsx';
 import Analysis from './components/Analysis.jsx';
+import Inquiry from './components/Inquiry.jsx';
 // Optional: npm install lucide-react
-import { LayoutDashboard, Activity, FileSearch, Menu as MenuIcon } from 'lucide-react';
+import { LayoutDashboard, Activity, FileSearch, FileText, Menu as MenuIcon } from 'lucide-react';
 
 function App() {
   const [prices, setPrices] = useState([]);
@@ -69,6 +70,13 @@ function App() {
 
   const prevailingReport = calculatePrevailing();
 
+  const tabLabels = {
+    dashboard: "Dashboard",
+    monitoring: "Monitoring",
+    analysis: "Price Analysis",
+    inquiry: "Letter of Inquiry"
+  };
+
   // --- MODERN STYLES ---
   const sidebarStyle = {
     width: "260px",
@@ -127,6 +135,9 @@ function App() {
           <button style={navItemStyle(activeTab === "analysis")} onClick={() => setActiveTab("analysis")}>
             <FileSearch size={18} /> Price Analysis
           </button>
+          <button style={navItemStyle(activeTab === "inquiry")} onClick={() => setActiveTab("inquiry")}>
+            <FileText size={18} /> Letter of Inquiry
+          </button>
         </div>
 
         <div style={{ padding: "20px", borderTop: "1px solid #1e293b", fontSize: "0.75rem", color: "#475569" }}>
@@ -139,7 +150,7 @@ function App() {
         <header style={{ marginBottom: "32px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: "1.8rem", color: "#0f172a", fontWeight: "800" }}>
-              {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+              {tabLabels[activeTab] || ""}
             </h1>
             <p style={{ margin: "4px 0 0 0", color: "#64748b" }}>Welcome back, Monitoring Officer</p>
           </div>
@@ -153,6 +164,7 @@ function App() {
           {activeTab === "dashboard" && <Dashboard prices={prices} />}
           {activeTab === "monitoring" && <Monitoring prices={prices} form={form} handleChange={handleChange} handleSave={handleSave} />}
           {activeTab === "analysis" && <Analysis prevailingReport={prevailingReport} />}
+          {activeTab === "inquiry" && <Inquiry prices={prices} />}
         </div>
       </div>
     </div>
