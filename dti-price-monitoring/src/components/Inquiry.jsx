@@ -3,7 +3,7 @@ import React, { useMemo, useState } from "react";
 const formatCurrency = (value) => `\u20b1${Number(value || 0).toFixed(2)}`;
 
 export default function Inquiry({ prices }) {
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
   const [letter, setLetter] = useState({
     subject: "Letter of Inquiry",
     officer: "",
@@ -11,29 +11,90 @@ export default function Inquiry({ prices }) {
     content: ""
   });
 
+  const toggleSelection = (id) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
   const flaggedItems = useMemo(
     () => prices.filter((p) => Number(p.srp || 0) > 0 && Number(p.price) > Number(p.srp)),
     [prices]
   );
 
-  const handleSelect = (e) => {
-    const id = e.target.value;
-    setSelectedId(id);
-    const item = prices.find((p) => p.id === id);
-    if (item) generateContent(item);
+  const handleGenerate = () => {
+    if (selectedIds.length === 0) return;
+    const items = prices.filter(p => selectedIds.includes(p.id));
+    generateContent(items);
   };
 
-  const generateContent = (item) => {
-    const price = Number(item.price || 0);
-    const srp = Number(item.srp || 0);
-    const variance = price - srp;
-    const dateObserved = item.timestamp
-      ? new Date(item.timestamp).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+  const generateContent = (items) => {
+    const firstItem = items[0];
+    const dateObserved = firstItem.timestamp
+      ? new Date(firstItem.timestamp).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
       : new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
-    const body = `Dear ${item.store || "Establishment"},\n\nSubject: Price Inquiry - ${item.commodity || "Commodity"}\n\nDuring our monitoring on ${dateObserved} at ${item.store || "your establishment"} in ${item.municipality || "the covered area"}, we recorded a retail price of ${formatCurrency(price)} for ${item.commodity || "the item"}. The Suggested Retail Price (SRP) on record is ${formatCurrency(srp)}, indicating a variance of ${formatCurrency(variance)}.\n\nIn line with the Consumer Act and DTI price stabilization efforts, kindly provide a written explanation within three (3) days from receipt of this letter regarding the observed price variance. Please include recent supplier invoices, delivery receipts, and any factors affecting your pricing.\n\nYou may submit your response via email or directly to the DTI office. Should you require clarification, please contact our office immediately.\n\nThank you for your prompt cooperation.\n\nRespectfully,\n${letter.officer || "Monitoring Officer"}`;
+    // Generate observation table rows
+    const commodityRows = items.map(item => {
+      const price = Number(item.price || 0);
+      const srp = Number(item.srp || 0);
+      const variance = price - srp;
+      return `        <tr>
+          <td>${item.commodity || ""}</td>
+          <td>${item.brandName || ""}</td>
+          <td>${item.priceClass || ""}</td>
+          <td>${formatCurrency(srp)}</td>
+          <td>${formatCurrency(price)}</td>
+          <td>${formatCurrency(variance)}</td>
+        </tr>`;
+    }).join('\n');
 
-    setLetter((prev) => ({ ...prev, subject: `Price Inquiry - ${item.commodity || "Commodity"}`, content: body }));
+    // Add blank rows
+    const blankRows = Array.from({ length: 3 }, () => 
+      `        <tr>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+        </tr>`
+    ).join('\n');
+
+    const body = `      <div class="letter-body">
+        <p>Date: <u>${letter.date}</u></p>
+        <br/>
+        <p>${"_".repeat(35)}<br/>${"_".repeat(35)}<br/>${"_".repeat(35)}</p>
+        <br/><br/>
+        <p>Dear Sir/Madam:</p>
+        <br/>
+        <p>In connection with the price/supply monitoring conducted at <strong>${firstItem.store || "your store"}</strong> by the Consumer Protection Division of the Department of Trade and Industry – Lanao Del Norte Provincial Office on <strong>${dateObserved}</strong>, we would like to bring your attention to the results of the said monitoring, particularly on the following:</p>
+        
+        <table class="obs-table">
+          <tr>
+            <th style="width: 25%;">Commodity</th>
+            <th style="width: 15%;">Brand Name (BN)</th>
+            <th style="width: 12%;">Price Class (PC)</th>
+            <th style="width: 12%;">SRP</th>
+            <th style="width: 12%;">Monitored Price</th>
+            <th style="width: 12%;">Variance</th>
+          </tr>
+${commodityRows}
+${blankRows}
+        </table>
+
+        <p>As the agency mandated to ensure the reasonableness of prices/availability of supply of 
+        <em>basic necessities and prime commodities</em>, the DTI would like to inquire about the circumstances 
+        and factors which caused the occurrence of the above-enumerated observations.</p>
+        
+        <p>Please respond within five <strong>(5)</strong> working days from upon receipt of this letter and e-mail it  at <strong>r10.lanaodelnorte@dti.gov.ph</strong>. Any information that you provide will be treated with utmost 
+        confidentiality and will be used solely for relevant monitoring, assessment, and analysis purposes.</p>
+        <br/>
+        <p>Thank you for your prompt cooperation.</p>
+      </div>`;
+
+    const commodityList = items.map(i => i.commodity).join(", ");
+    setLetter((prev) => ({ ...prev, subject: `Price Inquiry - ${commodityList}`, content: body }));
   };
 
   const handleLetterChange = (e) => {
@@ -49,21 +110,76 @@ export default function Inquiry({ prices }) {
         <head>
           <title>${letter.subject}</title>
           <style>
-            body { font-family: 'Times New Roman', Times, serif; margin: 40px; line-height: 1.6; }
-            h2 { text-align: center; margin-bottom: 10px; }
-            .meta { text-align: center; margin-bottom: 30px; color: #444; }
-            pre { white-space: pre-wrap; font-family: 'Times New Roman', Times, serif; }
-            .signature { margin-top: 60px; }
-            .sig-line { margin-top: 40px; width: 240px; border-top: 1px solid #000; }
+            @page { margin: 0.5in; }
+            body { font-family: 'Times New Roman', Times, serif; margin: 20px; line-height: 1.4; font-size: 13px; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 12px; }
+            .form-table { border: 0.2px solid #000; border-collapse: collapse; font-size: 13px; }
+            .form-table td { border: 0.2px solid #000; padding: 4px 7px; }
+            .form-label { background: #f0f0f0; font-weight: normal; width: 30px; writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
+            .letter-body { white-space: normal; }
+            .letter-body p { margin: 8px 0; text-align: justify; }
+            .letter-body u { text-decoration: underline; }
+            .obs-table { border-collapse: collapse; width: 100%; margin: 15px 0; font-size: 13px; }
+            .obs-table th, .obs-table td { border: 1px solid #000; padding: 5px 7px; text-align: left; }
+            .obs-table th { background: #f0f0f0; font-weight: bold; }
+            .signature { margin-top: 25px; }
+            .sig-name { font-weight: bold; text-decoration: underline; margin-top: 35px; }
+            .sig-title { margin-top: 3px; }
+            .received-by { margin-top: 18px; padding-top: 15px; border-top: 0.3px solid #000; }
+            .received-by h4 { margin: 0 0 12px 0; font-weight: bold; font-size: 13px; }
+            .received-field { display: flex; margin-bottom: 10px; font-size: 13px; }
+            .received-field label { width: 180px; }
+            .received-field .line { flex: 1; border-bottom: 1px solid #000; margin-left: 10px; }
           </style>
         </head>
         <body>
-          <h2>${letter.subject}</h2>
-          <div class="meta">Date: ${letter.date}</div>
-          <pre>${letter.content}</pre>
+          <div class="header">
+            <table class="form-table">
+              <tr>
+                <td class="form-label" rowspan="3">FORM</td>
+                <td style="width: 60px;">Code</td>
+                <td style="width: 100px; text-align: center;">FM-PSM-03</td>
+              </tr>
+              <tr>
+                <td>Rev.</td>
+                <td style="text-align: center;">01</td>
+              </tr>
+              <tr>
+                <td>Date</td>
+                <td style="text-align: center;">${new Date(letter.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-')}</td>
+              </tr>
+            </table>
+            <div style="text-align: right;">
+              <img src="/dti-logo.png" alt="DTI Logo" style="height: 60px;" onerror="this.style.display='none'" />
+            </div>
+          </div>
+          ${letter.content}
           <div class="signature">
-            <div class="sig-line"></div>
-            <div>${letter.officer || "Monitoring Officer"}</div>
+            <div class="sig-name">Jane Marie L. Tabucan</div>
+            <div class="sig-title">Provincial Director</div>
+          </div>
+          <div class="received-by">
+            <h4>Received by:</h4>
+            <div class="received-field">
+              <label>Name (Firm Representative)</label>
+              <span>:</span>
+              <div class="line"></div>
+            </div>
+            <div class="received-field">
+              <label>Signature</label>
+              <span>:</span>
+              <div class="line"></div>
+            </div>
+            <div class="received-field">
+              <label>Position</label>
+              <span>:</span>
+              <div class="line"></div>
+            </div>
+            <div class="received-field">
+              <label>Date</label>
+              <span>:</span>
+              <div class="line"></div>
+            </div>
           </div>
         </body>
       </html>
@@ -72,8 +188,7 @@ export default function Inquiry({ prices }) {
     setTimeout(() => printWindow.print(), 400);
   };
 
-  const selectedItem = prices.find((p) => p.id === selectedId);
-  const variance = selectedItem ? Number(selectedItem.price || 0) - Number(selectedItem.srp || 0) : 0;
+  const selectedItems = prices.filter(p => selectedIds.includes(p.id));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px", fontFamily: "'Inter', sans-serif" }}>
@@ -86,36 +201,63 @@ export default function Inquiry({ prices }) {
           <span style={tagStyle}>Auto-generated, editable</span>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", alignItems: "end" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
           <div>
-            <label style={labelStyle}>Price Entry</label>
-            <select value={selectedId} onChange={handleSelect} style={inputStyle}>
-              <option value="">Select price record</option>
-              {prices.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {`${p.commodity || "Item"} — ${p.store || "Store"} (${formatCurrency(p.price)} vs SRP ${formatCurrency(p.srp)})`}
-                </option>
-              ))}
-            </select>
+            <label style={labelStyle}>Select Price Entries ({selectedIds.length} selected)</label>
+            <p style={{ fontSize: "0.85rem", color: "#64748b", margin: "4px 0 0 0" }}>Click items below to select multiple commodities for the letter</p>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div style={badgeBoxStyle("#fff7ed", "#f97316")}>SRP: {formatCurrency(selectedItem?.srp || 0)}</div>
-            <div style={badgeBoxStyle("#fef2f2", variance > 0 ? "#dc2626" : "#22c55e")}>
-              Variance: {formatCurrency(variance)}
-            </div>
-          </div>
+          <button
+            onClick={handleGenerate}
+            style={{ ...buttonStyle, background: "#0f172a", color: "white", fontSize: "0.9rem" }}
+            disabled={selectedIds.length === 0}
+          >
+            Generate Letter ({selectedIds.length})
+          </button>
         </div>
 
-        {selectedItem && (
-          <div style={{ marginTop: "16px", padding: "12px", border: "1px solid #e2e8f0", borderRadius: "10px", background: "#f8fafc" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", fontSize: "0.95rem", color: "#0f172a" }}>
-              <span><strong>Commodity:</strong> {selectedItem.commodity || "--"}</span>
-              <span><strong>Store:</strong> {selectedItem.store || "--"}</span>
-              <span><strong>Municipality:</strong> {selectedItem.municipality || "--"}</span>
-              <span><strong>Date:</strong> {selectedItem.timestamp ? new Date(selectedItem.timestamp).toLocaleDateString() : "--"}</span>
-            </div>
-          </div>
-        )}
+        <div style={{ maxHeight: "300px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "10px" }}>
+          {prices.map((p) => {
+            const isSelected = selectedIds.includes(p.id);
+            const variance = Number(p.price || 0) - Number(p.srp || 0);
+            return (
+              <div
+                key={p.id}
+                onClick={() => toggleSelection(p.id)}
+                style={{
+                  padding: "12px 16px",
+                  borderBottom: "1px solid #f1f5f9",
+                  cursor: "pointer",
+                  background: isSelected ? "#eff6ff" : "white",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  transition: "background 0.2s"
+                }}
+              >
+                <div style={{ display: "flex", gap: "12px", alignItems: "center", flex: 1 }}>
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    readOnly
+                    style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: "600", color: "#0f172a" }}>{p.commodity || "--"}</div>
+                    <div style={{ fontSize: "0.85rem", color: "#64748b" }}>
+                      {p.store || "--"} • {p.municipality || "--"}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "8px", fontSize: "0.85rem" }}>
+                  <span style={{ color: "#64748b" }}>₱{Number(p.price || 0).toFixed(2)}</span>
+                  <span style={{ color: variance > 0 ? "#dc2626" : "#22c55e", fontWeight: "600" }}>
+                    {variance > 0 ? "+" : ""}{formatCurrency(variance)}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div style={cardStyle}>
@@ -150,9 +292,9 @@ export default function Inquiry({ prices }) {
 
         <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "12px" }}>
           <button
-            onClick={() => selectedItem && generateContent(selectedItem)}
+            onClick={handleGenerate}
             style={{ ...buttonStyle, background: "#e2e8f0", color: "#0f172a" }}
-            disabled={!selectedItem}
+            disabled={selectedIds.length === 0}
           >
             Regenerate Letter
           </button>
@@ -202,7 +344,7 @@ export default function Inquiry({ prices }) {
                     <td style={{ ...tdStyle, color: v > 0 ? "#dc2626" : "#0f172a" }}>{formatCurrency(v)}</td>
                     <td style={tdStyle}>
                       <button
-                        onClick={() => { setSelectedId(p.id); generateContent(p); }}
+                        onClick={() => { setSelectedIds([p.id]); generateContent([p]); }}
                         style={{ ...miniButtonStyle, background: "#0f172a", color: "white" }}
                       >
                         Draft Letter
