@@ -1,5 +1,6 @@
 import React from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell } from 'recharts';
+import { getOrderedColumns, formatColumnName, formatCellValue } from '../services/schemaUtils';
 
 export default function Monitoring({ prices, form, handleChange, handleSave }) {
   // Sort and take top 5 for the bar chart
@@ -114,7 +115,86 @@ export default function Monitoring({ prices, form, handleChange, handleSave }) {
         </div>
 
       </div>
+
+      {/* 3. DYNAMIC DATA TABLE */}
+      {prices.length > 0 && (
+        <div style={cardStyle}>
+          <h4 style={{ margin: "0 0 16px 0", color: "#1e293b", fontSize: "1.1rem" }}>
+            📊 All Records ({prices.length})
+          </h4>
+          <div style={{ overflowX: "auto" }}>
+            <DynamicTable data={prices} />
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * Dynamic Table Component - automatically renders all columns from data
+ */
+function DynamicTable({ data }) {
+  const columns = getOrderedColumns(data);
+
+  if (columns.length === 0) {
+    return <div style={{ textAlign: "center", color: "#94a3b8", padding: "20px" }}>No data to display</div>;
+  }
+
+  return (
+    <table style={{
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: "0.9rem"
+    }}>
+      <thead>
+        <tr style={{ borderBottom: "2px solid #e2e8f0", background: "#f8fafc" }}>
+          {columns.map((col) => (
+            <th 
+              key={col} 
+              style={{
+                textAlign: "left",
+                padding: "12px",
+                fontWeight: "700",
+                color: "#475569",
+                fontSize: "0.85rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px"
+              }}
+            >
+              {formatColumnName(col)}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {data.map((row, idx) => (
+          <tr 
+            key={row.id || row._id || idx} 
+            style={{
+              borderBottom: "1px solid #f1f5f9",
+              background: idx % 2 === 0 ? "#ffffff" : "#f8fafc",
+              transition: "background 0.2s"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "#f0f4f8"}
+            onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? "#ffffff" : "#f8fafc"}
+          >
+            {columns.map((col) => (
+              <td 
+                key={`${row.id || row._id}-${col}`}
+                style={{
+                  padding: "12px",
+                  color: "#1e293b",
+                  borderRight: "1px solid #f1f5f9"
+                }}
+              >
+                {formatCellValue(row[col], col)}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

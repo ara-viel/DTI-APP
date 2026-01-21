@@ -5,12 +5,14 @@ import Monitoring from './components/Monitoring.jsx';
 import Inquiry from "./components/Inquiry.jsx";
 import Analysis from './components/Analysis.jsx';
 import ComparativeAnalysis from './components/ComparativeAnalysis.jsx';
+import FileImport from './components/FileImport.jsx';
 // Optional: npm install lucide-react
-import { LayoutDashboard, Activity, FileSearch, Menu as MenuIcon } from 'lucide-react';
+import { LayoutDashboard, Activity, FileSearch, Menu as MenuIcon, Upload } from 'lucide-react';
 
 function App() {
   const [prices, setPrices] = useState([]);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [showImport, setShowImport] = useState(false);
   const [form, setForm] = useState({
     commodity: "", store: "", municipality: "", price: "", prevPrice: "", srp: ""
   });
@@ -36,6 +38,20 @@ function App() {
     setForm({ commodity: "", store: "", municipality: "", price: "", prevPrice: "", srp: "" });
     loadData();
     setActiveTab("dashboard"); // Redirect to overview after saving
+  };
+
+  const handleImportSuccess = async (importedData) => {
+    // Add each imported record to the database
+    for (const record of importedData) {
+      await addPriceData({
+        ...record,
+        price: Number(record.price),
+        prevPrice: Number(record.prevPrice),
+        srp: Number(record.srp),
+        timestamp: record.timestamp || new Date().toISOString()
+      });
+    }
+    loadData(); // Reload all data
   };
 
   // --- PREVAILING PRICE CALCULATION ---
@@ -159,7 +175,13 @@ function App() {
             <p style={{ margin: "4px 0 0 0", color: "#64748b" }}>Welcome back, Monitoring Officer</p>
           </div>
           <div style={{ display: "flex", gap: "12px" }}>
-             <button style={secondaryButtonStyle}>Export Data</button>
+             <button 
+               style={secondaryButtonStyle}
+               onClick={() => setShowImport(true)}
+             >
+               <Upload size={16} style={{ display: "inline", marginRight: "6px" }} />
+               Import Data
+             </button>
              <button style={primaryButtonStyle} onClick={() => setActiveTab("monitoring")}>+ New Entry</button>
           </div>
         </header>
@@ -172,6 +194,14 @@ function App() {
           {activeTab === "comparative" && <ComparativeAnalysis prices={prices} prevailingReport={prevailingReport} />}
         </div>
       </div>
+
+      {/* FILE IMPORT MODAL */}
+      {showImport && (
+        <FileImport 
+          onImportSuccess={handleImportSuccess}
+          onClose={() => setShowImport(false)}
+        />
+      )}
     </div>
   );
 }

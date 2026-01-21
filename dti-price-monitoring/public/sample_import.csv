@@ -1,0 +1,10 @@
+commodity,store,municipality,price,prevPrice,srp
+Rice,Savemore,Manila,45.50,43.00,50.00
+Rice,SM Hypermarket,Quezon City,46.00,44.50,50.00
+Rice,Puregold,Caloocan,44.75,42.50,50.00
+Eggs,Savemore,Manila,8.50,8.00,9.50
+Eggs,SM Hypermarket,Quezon City,8.75,8.25,9.50
+Eggs,Puregold,Caloocan,8.25,7.80,9.50
+Onions,Savemore,Manila,65.00,60.00,70.00
+Onions,SM Hypermarket,Quezon City,67.00,62.00,70.00
+Onions,Puregold,Caloocan,64.00,59.00,70.00
