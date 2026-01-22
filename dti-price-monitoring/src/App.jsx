@@ -65,7 +65,7 @@ function App() {
         timestamp: normalizedRecord.timestamp || new Date().toISOString()
       });
     }
-    loadData(); // Reload all data
+    loadData();
   };
 
   const handleDeleteData = async (id) => {
@@ -138,7 +138,7 @@ function App() {
   const tabLabels = {
     dashboard: "Dashboard",
     monitoring: "Monitoring",
-    comparativepriceanalysis: "Comparative Price Analysis",
+    "comparative price analysis": "Comparative Price Analysis",
     inquiry: "Letter of Inquiry",
     dataManagement: "Data Management"
   };
@@ -268,7 +268,6 @@ function App() {
           {activeTab === "dashboard" && <Dashboard prices={prices} />}
           {activeTab === "monitoring" && <Monitoring prices={prices} form={form} handleChange={handleChange} handleSave={handleSave} />}
           {activeTab === "comparative price analysis" && <ComparativeAnalysis prices={prices} prevailingReport={prevailingReport} />}
-          {activeTab === "inquiry" && <Inquiry prices={prices} />}
           {activeTab === "dataManagement" && (
             <DataManagement 
               prices={prices} 
