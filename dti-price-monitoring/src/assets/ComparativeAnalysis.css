@@ -1,0 +1,210 @@
+/* ComparativeAnalysis.css */
+
+.ca-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.ca-summary-card {
+  background: white;
+  padding: 16px 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+  border-left-width: 4px;
+}
+
+.ca-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ca-value {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-top: 8px;
+}
+
+.ca-container {
+  background: white;
+  padding: 24px;
+  border-radius: 16px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.ca-counts-row {
+  margin-bottom: 12px;
+  color: #334155;
+  font-weight: 500;
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.ca-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.ca-title {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #0f172a;
+}
+
+.ca-subtitle {
+  margin: 4px 0 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.ca-export-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ca-export-btn {
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+.ca-export-btn.csv {
+  background: #0f172a;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.2);
+}
+
+.ca-export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ca-filters-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ca-filters-selects {
+  border-left: 1px solid #e2e8f0;
+  padding-left: 12px;
+  margin-left: 12px;
+}
+
+.ca-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.9rem;
+  outline: none;
+  cursor: pointer;
+  background: white;
+}
+
+.ca-search-row {
+  margin-bottom: 20px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.ca-search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.9rem;
+  outline: none;
+  background: white;
+}
+
+.ca-table-container {
+  overflow-x: auto;
+}
+
+.ca-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ca-th {
+  padding: 12px 16px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.ca-td {
+  padding: 16px;
+  font-size: 0.9rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ca-row {
+  transition: background 0.15s;
+  cursor: pointer;
+}
+
+.ca-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.ca-pagination-btn {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  transition: all 0.2s ease;
+}
+
+.ca-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Modal styles, summary chips, etc. can be added as needed */
