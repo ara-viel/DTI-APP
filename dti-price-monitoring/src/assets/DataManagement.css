@@ -225,6 +225,20 @@
   cursor: pointer;
 }
 
+/* Make all table text uppercase */
+.dm-table-td span {
+  text-transform: uppercase;
+}
+
+
+
+/* Make select dropdowns uppercase */
+.dm-select {
+  text-transform: uppercase;
+}
+
+
+
 /* Buttons */
 .dm-btn {
   display: flex;
