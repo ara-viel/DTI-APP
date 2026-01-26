@@ -58,6 +58,7 @@ function App() {
         commodity: normalized.commodity || 'Unknown',
         month: normalized.month || '',
         price: Number(normalized.price) || 0,
+        srp: normalized.srp === '' || normalized.srp === undefined ? '' : Number(normalized.srp),
         size: normalized.size || '',
         store: normalized.store || '',
         variant: normalized.variant || '',

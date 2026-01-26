@@ -43,8 +43,8 @@ export default function DataManagement({ prices, onAddData, onDeleteData, onUpda
         (item.brand?.toLowerCase() || "").includes(searchLower) ||
         (item.variant?.toLowerCase() || "").includes(searchLower)
       );
-      // Category filter based on subTab
-      const itemCategory = (item.category || "").toString().toLowerCase();
+      // Category filter based on subTab - check both brand and category fields
+      const itemCategory = (item.brand || item.category || "").toString().toLowerCase();
       if (isOtherTab) {
         if (primaryCategories.includes(itemCategory)) return false;
       } else if (activeCategory) {

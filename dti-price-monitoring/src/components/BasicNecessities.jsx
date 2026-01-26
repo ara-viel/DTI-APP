@@ -28,6 +28,11 @@ export default function BasicNecessities({ prices, onAddData, onDeleteData, onUp
     if (!prices) return [];
     
     return prices.filter(item => {
+      // Only show BASIC NECESSITIES in this component
+      if (item.brand !== 'BASIC NECESSITIES') {
+        return false;
+      }
+      
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = (
         (item.commodity?.toLowerCase() || "").includes(searchLower) ||
@@ -74,6 +79,14 @@ export default function BasicNecessities({ prices, onAddData, onDeleteData, onUp
     
     const years = new Set();
     prices.forEach(item => {
+      // Check years field first
+      if (item.years) {
+        const yearNum = parseInt(item.years);
+        if (!isNaN(yearNum)) {
+          years.add(yearNum);
+        }
+      }
+      // Also check timestamp as fallback
       if (item.timestamp) {
         const year = new Date(item.timestamp).getFullYear();
         if (!isNaN(year)) {
@@ -82,8 +95,8 @@ export default function BasicNecessities({ prices, onAddData, onDeleteData, onUp
       }
     });
     
-    // Add 2014-2025 even if no data
-    for (let year = 2014; year <= 2025; year++) {
+    // Add 2014-2026 even if no data
+    for (let year = 2014; year <= 2026; year++) {
       years.add(year);
     }
     

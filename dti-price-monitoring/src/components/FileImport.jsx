@@ -43,7 +43,13 @@ export default function FileImport({ onImportSuccess, onClose }) {
 
     setLoading(true);
     try {
-      await onImportSuccess(importedData, category);
+      // Override brand field with selected category
+      const dataWithCategory = importedData.map(item => ({
+        ...item,
+        brand: category  // Use the selected category as the brand
+      }));
+
+      await onImportSuccess(dataWithCategory, category);
       setMessage({
         type: "success",
         text: `${importedData.length} records imported successfully!`
@@ -128,13 +134,13 @@ export default function FileImport({ onImportSuccess, onClose }) {
             }}
           >
             <option value="">-- Choose Category --</option>
-            <option value="Basic Necessities">Basic Necessities</option>
-            <option value="Prime Commodities">Prime Commodities</option>
-            <option value="Construction Materials">Construction Materials</option>
-            <option value="Medical Supplies">Medical Supplies</option>
-            <option value="Noche Buena">Noche Buena</option>
-            <option value="Agri Products">Agri Products</option>
-            <option value="School Supplies">School Supplies</option>
+            <option value="BASIC NECESSITIES">Basic Necessities</option>
+            <option value="PRIME COMMODITIES">Prime Commodities</option>
+            <option value="CONSTRUCTION MATERIALS">Construction Materials</option>
+            <option value="MEDICAL SUPPLIES">Medical Supplies</option>
+            <option value="NOCHE BUENA">Noche Buena</option>
+            <option value="AGRI PRODUCTS">Agri Products</option>
+            <option value="SCHOOL SUPPLIES">School Supplies</option>
           </select>
         </div>
 
