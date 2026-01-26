@@ -12,10 +12,10 @@ import './assets/App.css';
 
 function App() {
   const [prices, setPrices] = useState([]);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') || "dashboard");
   const [showImport, setShowImport] = useState(false);
   const [isDataMgmtOpen, setIsDataMgmtOpen] = useState(false);
-  const [dataMgmtTab, setDataMgmtTab] = useState("basic");
+  const [dataMgmtTab, setDataMgmtTab] = useState(() => localStorage.getItem('dataMgmtTab') || "basic");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [form, setForm] = useState({ commodity: "", store: "", municipality: "", price: "", prevPrice: "", srp: "" });
 
@@ -88,7 +88,12 @@ function App() {
     }
   };
 
-  const handleSelectDataMgmtTab = (subTab) => { setActiveTab("dataManagement"); setDataMgmtTab(subTab); setIsDataMgmtOpen(true); };
+  const handleSelectDataMgmtTab = (subTab) => {
+    setActiveTab("dataManagement");
+    setDataMgmtTab(subTab);
+    localStorage.setItem('dataMgmtTab', subTab);
+    setIsDataMgmtOpen(true);
+  };
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 

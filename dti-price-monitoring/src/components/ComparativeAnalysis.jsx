@@ -92,11 +92,9 @@ const modalTdStyle = {
 
 // General table cell style alias used in main table rows
 const tdStyle = modalTdStyle;
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { TrendingUp, TrendingDown, Search, X, ChevronLeft, ChevronRight, Download } from "lucide-react";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-import { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, WidthType } from "docx";
+import { generatePDF, generateWord } from "../services/reportGenerator";
 import "../assets/ComparativeAnalysis.css";
 
 // Helper to get month names
@@ -117,6 +115,8 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
   // Month/year selection for report
   const [selectedReportMonth, setSelectedReportMonth] = useState("");
   const [selectedReportYear, setSelectedReportYear] = useState("");
+  const [reportNarrative, setReportNarrative] = useState("");
+  const [isNarrativeEdited, setIsNarrativeEdited] = useState(false);
 
 
   // Handle null or undefined prices
@@ -143,11 +143,10 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
   const availableYears = useMemo(() => {
     const years = new Set();
     pricesArray.forEach(p => {
-      if (p && p.year) {
-        years.add(Number(p.year));
-      } else if (p && p.timestamp) {
-        const d = new Date(p.timestamp);
-        if (!isNaN(d)) years.add(d.getFullYear());
+      const y = p?.year ?? p?.years;
+      if (y !== undefined && y !== null && String(y).trim() !== "") {
+        const n = Number(y);
+        if (!Number.isNaN(n)) years.add(n);
       }
     });
     return Array.from(years).sort((a, b) => b - a);
@@ -196,7 +195,7 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
         // Filter by selected month/year if set
         if (selectedReportMonth && selectedReportYear) {
           let itemMonth = item.month;
-          let itemYear = item.year;
+          let itemYear = item.year ?? item.years;
           // Try to normalize month
           if (typeof itemMonth === "string") {
             const idx = MONTHS.findIndex(mon => mon.toLowerCase() === itemMonth.toLowerCase());
@@ -217,13 +216,27 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
             }
           }
         }
-        const key = `${item.commodity}_${item.store || "Unknown"}`;
+        // Normalize brand for grouping (prefer single brand when arrays provided)
+        let itemBrand = "";
+        try {
+          if (item.brand) {
+            if (Array.isArray(item.brand)) itemBrand = String(item.brand[0] || "");
+            else itemBrand = String(item.brand);
+          } else if (item.brands) {
+            if (Array.isArray(item.brands)) itemBrand = String(item.brands[0] || "");
+            else itemBrand = String(item.brands);
+          }
+        } catch (e) { itemBrand = ""; }
+
+        const key = `${item.commodity}_${itemBrand || "UnknownBrand"}_${item.size || ""}_${item.store || "Unknown"}`;
         if (!grouped[key]) {
           grouped[key] = {
             commodity: item.commodity,
+            brand: itemBrand || "",
             store: item.store || "Unknown",
             size: item.size || "",
-            prices: []
+            prices: [],
+            brands: new Set()
           };
         }
         grouped[key].prices.push({
@@ -231,11 +244,22 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
           price: Number(item.price) || 0,
           srp: Number(item.srp) || 0,
           month: item.month,
-          year: item.year,
-          // Store numeric timestamp (ms). If the import provided a timestamp use it; else derive from year/month if available; otherwise 0.
-          ts: item.timestamp ? new Date(item.timestamp).getTime() : (item.year ? new Date(Number(item.year), (Number(item.month) || 1) - 1).getTime() : 0),
+          year: item.year ?? item.years ?? "",
+          // Store numeric timestamp (ms) if provided
+          ts: item.timestamp ? new Date(item.timestamp).getTime() : 0,
           originalTimestamp: item.timestamp
         });
+        // Collect brand information (support `brand` or `brands`, arrays or strings)
+        try {
+          if (itemBrand) grouped[key].brands.add(itemBrand);
+          else if (item.brand) {
+            if (Array.isArray(item.brand)) item.brand.forEach(b => b && grouped[key].brands.add(String(b)));
+            else grouped[key].brands.add(String(item.brand));
+          } else if (item.brands) {
+            if (Array.isArray(item.brands)) item.brands.forEach(b => b && grouped[key].brands.add(String(b)));
+            else grouped[key].brands.add(String(item.brands));
+          }
+        } catch (e) { /* ignore brand parsing errors */ }
       });
 
       // ...existing code...
@@ -283,16 +307,18 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
         // Non-compliant if: price >= SRP * 1.10 OR price <= SRP * 0.90 (outside ±10% threshold)
         const isCompliant = srp > 0 ? (currentPrice < srp * 1.10 && currentPrice > srp * 0.90) : true;
 
-        // Determine representative month/year from imported data (prefer the most recent entry that has valid year)
-        const entryWithYear = sortedPrices.find(e => e.year !== undefined && e.year !== null && String(e.year).trim() !== "") || sortedPrices[0];
-        let repMonth = entryWithYear?.month;
-        let repYear = entryWithYear?.year;
-        if ((!repYear || isNaN(Number(repYear))) && entryWithYear && entryWithYear.ts) {
-          repYear = new Date(entryWithYear.ts).getFullYear();
-        }
+        // Determine representative month/year from imported data (use only imported year fields; do NOT fall back to current year)
+        const entryWithYear = sortedPrices.find(e => e.year !== undefined && e.year !== null && String(e.year).trim() !== "");
+        let repMonth = entryWithYear?.month ?? "";
+        let repYear = entryWithYear?.year ?? "";
+
+        // Build brand string from collected brands
+        const brandsArr = group.brands ? Array.from(group.brands).filter(Boolean) : [];
+        const brandStr = brandsArr.length ? brandsArr.join(', ') : "";
 
         return {
           commodity: group.commodity,
+          brand: brandStr,
           store: group.store,
           size: group.size,
           prevailingPrice: prevailingPrice,
@@ -345,7 +371,42 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
   };
 
   // Get filtered data first so it can be used in other hooks
-  const filteredData = useMemo(() => getCombinedData(), [pricesArray, selectedCommodity, selectedStore, searchTerm, srpLookup, prevailingLookup]);
+  const filteredData = useMemo(() => getCombinedData(), [pricesArray, selectedCommodity, selectedStore, searchTerm, srpLookup, prevailingLookup, selectedReportMonth, selectedReportYear]);
+
+  // Report-specific data: filter combined results to only entries that match the selected report month/year
+  const reportData = useMemo(() => {
+    const base = getCombinedData();
+    if (!selectedReportMonth && !selectedReportYear) return base;
+
+    const matchesEntry = (p) => {
+      // derive year and month from imported fields or timestamp (no default to current year)
+      let y = p?.year ?? p?.years;
+      if ((y === undefined || y === null || String(y).trim() === "") && p?.timestamp) {
+        const d = new Date(p.timestamp);
+        if (!isNaN(d.getTime())) y = d.getFullYear();
+      }
+      let m = p?.month;
+      if (typeof m === 'string') {
+        const idx = MONTHS.findIndex(mon => mon.toLowerCase() === m.toLowerCase());
+        if (idx !== -1) m = idx + 1;
+      }
+      if (m !== undefined && m !== null) m = Number(m);
+      if (y !== undefined && y !== null) y = Number(y);
+
+      if (selectedReportYear && selectedReportMonth) {
+        return Number(y) === Number(selectedReportYear) && Number(m) === Number(selectedReportMonth);
+      }
+      if (selectedReportYear) return Number(y) === Number(selectedReportYear);
+      if (selectedReportMonth) return Number(m) === Number(selectedReportMonth);
+      return false;
+    };
+
+    return base.filter(item => {
+      // find any original price record for this commodity/store that matches the report selection
+      const entries = pricesArray.filter(p => p && p.commodity === item.commodity && ((p.store || 'Unknown') === item.store));
+      return entries.some(matchesEntry);
+    });
+  }, [pricesArray, selectedReportMonth, selectedReportYear, selectedCommodity, selectedStore, searchTerm, srpLookup, prevailingLookup]);
 
   // Count unique commodities and stores in filteredData
   const filteredCommodityCount = useMemo(() => {
@@ -368,14 +429,14 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
 
   // Get top 5 highest price changes
   const getTop5Highest = () => {
-    return [...filteredData]
+    return [...dataForAnalysis]
       .sort((a, b) => (b.priceChange || 0) - (a.priceChange || 0))
       .slice(0, 5);
   };
 
   // Get top 5 lowest price changes
   const getTop5Lowest = () => {
-    return [...filteredData]
+    return [...dataForAnalysis]
       .sort((a, b) => (a.priceChange || 0) - (b.priceChange || 0))
       .slice(0, 5);
   };
@@ -383,11 +444,9 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
   // Get stores with highest SRP
   const getStoresWithHighestSRP = () => {
     const storeData = {};
-    pricesArray.forEach(item => {
+    dataForAnalysis.forEach(item => {
       if (item.store && item.srp) {
-        if (!storeData[item.store]) {
-          storeData[item.store] = [];
-        }
+        if (!storeData[item.store]) storeData[item.store] = [];
         storeData[item.store].push(Number(item.srp) || 0);
       }
     });
@@ -405,6 +464,9 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
     return storesWithAvgSRP;
   };
 
+  // Use reportData when month/year is selected, otherwise use filteredData for analysis
+  const dataForAnalysis = (selectedReportMonth || selectedReportYear) ? reportData : filteredData;
+
   // Pagination logic
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const paginatedData = useMemo(() => {
@@ -412,33 +474,36 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
     return filteredData.slice(startIdx, startIdx + itemsPerPage);
   }, [filteredData, currentPage]);
 
-  // Calculate summary statistics
-  const compliantCount = filteredData.filter(d => d.isCompliant).length;
-  const nonCompliantCount = filteredData.filter(d => !d.isCompliant).length;
-  const totalRecords = filteredData.length;
+  // Determine the source used for exports: when a month/year is selected use reportData, otherwise prefer filteredData then paginatedData
+  const reportSource = (selectedReportMonth || selectedReportYear) ? reportData : (filteredData.length > 0 ? filteredData : paginatedData);
+
+  // Calculate summary statistics (use dataForAnalysis so it follows selected month/year)
+  const compliantCount = dataForAnalysis.filter(d => d.isCompliant).length;
+  const nonCompliantCount = dataForAnalysis.filter(d => !d.isCompliant).length;
+  const totalRecords = dataForAnalysis.length;
   const complianceRate = totalRecords > 0 ? ((compliantCount / totalRecords) * 100).toFixed(1) : 0;
   const avgPriceChangeAbs = totalRecords > 0
-    ? (filteredData.reduce((acc, curr) => acc + (curr.priceChange || 0), 0) / totalRecords).toFixed(2)
+    ? (dataForAnalysis.reduce((acc, curr) => acc + (curr.priceChange || 0), 0) / totalRecords).toFixed(2)
     : "0.00";
 
-  const [topIncrease] = [...filteredData].sort((a, b) => (b.priceChange || 0) - (a.priceChange || 0));
-  const [topDecrease] = [...filteredData].sort((a, b) => (a.priceChange || 0) - (b.priceChange || 0));
-  const topNonCompliant = [...filteredData]
+  const [topIncrease] = [...dataForAnalysis].sort((a, b) => (b.priceChange || 0) - (a.priceChange || 0));
+  const [topDecrease] = [...dataForAnalysis].sort((a, b) => (a.priceChange || 0) - (b.priceChange || 0));
+  const topNonCompliant = [...dataForAnalysis]
     .filter((d) => !d.isCompliant)
     .sort((a, b) => {
       const overA = a.srp ? (a.currentPrice || 0) - a.srp : 0;
       const overB = b.srp ? (b.currentPrice || 0) - b.srp : 0;
       return overB - overA;
     })[0];
-  
+
   // Format the average price change sign correctly
   const avgChangeSign = parseFloat(avgPriceChangeAbs) > 0 ? "+" : parseFloat(avgPriceChangeAbs) < 0 ? "-" : "";
   const avgChangeValue = Math.abs(parseFloat(avgPriceChangeAbs)).toFixed(2);
-  
+
   // Count status types
-  const higherPreviousCount = filteredData.filter(d => d.statusType === "higher-than-previous").length;
-  const higherSRPCount = filteredData.filter(d => d.statusType === "higher-than-srp").length;
-  const decreasedCount = filteredData.filter(d => d.statusType === "decreased").length;
+  const higherPreviousCount = dataForAnalysis.filter(d => d.statusType === "higher-than-previous").length;
+  const higherSRPCount = dataForAnalysis.filter(d => d.statusType === "higher-than-srp").length;
+  const decreasedCount = dataForAnalysis.filter(d => d.statusType === "decreased").length;
   
   // Build enhanced narrative summary
   const top5HighestList = getTop5Highest();
@@ -448,315 +513,50 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
   const topIncreaseAmount = topIncrease?.priceChange || 0;
   const topDecreaseAmount = topDecrease?.priceChange || 0;
   
-  const summaryNarrative = `
-Price Movement Summary: Across ${totalRecords} monitored products, the average price change is ${avgChangeSign}₱${avgChangeValue}. 
+  const summaryNarrative = useMemo(() => {
+    const header = (selectedReportMonth && selectedReportYear)
+      ? `Report for ${MONTHS[selectedReportMonth - 1]} ${selectedReportYear}`
+      : selectedReportYear
+        ? `Report for ${selectedReportYear}`
+        : "Report for all months/years";
+
+    const topMovers = topIncrease ? `The highest increase was ${topIncrease.commodity} at ${topIncrease.store} (₱${topIncreaseAmount.toFixed(2)}).` : "No data available";
+    const topDecr = (topDecrease && topDecreaseAmount !== 0) ? `The largest decrease was ${topDecrease.commodity} at ${topDecrease.store} (₱${topDecreaseAmount.toFixed(2)}).` : "";
+    const topStore = storesHighestList[0]?.store || "N/A";
+    const topStoreAvg = storesHighestList[0]?.avgSRP ? storesHighestList[0].avgSRP.toFixed(2) : "0.00";
+
+    return `
+${header}
+Price Movement Summary: Across ${totalRecords} monitored products, the average price change is ${avgChangeSign}₱${avgChangeValue}.
 Status breakdown: ${higherPreviousCount} higher than previous price, ${higherSRPCount} higher than SRP, ${decreasedCount} decreased.
 
-Top Movers: ${topIncrease ? `The highest increase was ${topIncrease.commodity} at ${topIncrease.store} (₱${topIncreaseAmount.toFixed(2)}).` : "No data available"} 
-${topDecrease && topDecreaseAmount !== 0 ? `The largest decrease was ${topDecrease.commodity} at ${topDecrease.store} (₱${topDecreaseAmount.toFixed(2)}).` : ""}
+Top Movers: ${topMovers} ${topDecr}
 
-SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?.store || "N/A"} at ₱${storesHighestList[0]?.avgSRP.toFixed(2) || "0.00"}.
-  `;
+SRP Landscape: The store with the highest average SRP is ${topStore} at ₱${topStoreAvg}.
+`;
+  }, [selectedReportMonth, selectedReportYear, MONTHS, totalRecords, avgChangeSign, avgChangeValue, higherPreviousCount, higherSRPCount, decreasedCount, topIncrease, topDecrease, topIncreaseAmount, topDecreaseAmount, storesHighestList]);
+
+  useEffect(() => {
+    if (!isNarrativeEdited) {
+      setReportNarrative(summaryNarrative);
+    }
+  }, [summaryNarrative, isNarrativeEdited]);
+
+  useEffect(() => {
+    if (showReportModal) {
+      setReportNarrative(summaryNarrative);
+      setIsNarrativeEdited(false);
+    }
+  }, [selectedReportMonth, selectedReportYear, showReportModal, summaryNarrative]);
 
   // PDF Export Functions
-  const generatePDFReport = async () => {
-    setIsExporting(true);
-    try {
-      const pdf = new jsPDF("l", "mm", "letter");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      let yPosition = 15;
-      const marginLeft = 15;
-      const marginRight = 15;
-      const contentWidth = pageWidth - marginLeft - marginRight;
-
-      // Set default font
-      pdf.setFont("helvetica", "normal");
-
-      // Title and Date
-      pdf.setFontSize(18);
-      pdf.setFont("helvetica", "bold");
-      let reportTitle = "Comparative Price Analysis Report";
-      if (selectedReportMonth && selectedReportYear) {
-        reportTitle += ` for ${MONTHS[selectedReportMonth - 1]} ${selectedReportYear}`;
-      }
-      pdf.text(reportTitle, pageWidth / 2, yPosition, { align: "center" });
-      yPosition += 10;
-      pdf.setFontSize(10);
-      pdf.setFont("helvetica", "normal");
-      pdf.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, pageWidth / 2, yPosition, { align: "center" });
-      yPosition += 12;
-
-      // Narrative Summary - Use safe width to prevent cutoff
-      pdf.setFontSize(12);
-      pdf.setFont("helvetica", "bold");
-      let summaryTitle = "Situationer";
-      if (selectedReportMonth && selectedReportYear) {
-        summaryTitle += ` for ${MONTHS[selectedReportMonth - 1]} ${selectedReportYear}`;
-      }
-      pdf.text(summaryTitle, marginLeft, yPosition);
-      yPosition += 10;
-
-      pdf.setFontSize(12);
-      pdf.setFont("helvetica", "normal");
-      // Replace peso sign with PHP for better PDF compatibility
-      const pdfNarrative = summaryNarrative.replace(/₱/g, "Php ");
-      const narrativeLines = pdf.splitTextToSize(pdfNarrative, contentWidth);
-      narrativeLines.forEach((line) => {
-        pdf.text(line, marginLeft, yPosition);
-        yPosition += 5;
-      });
-      yPosition += 12;
-
-      // ...existing code for tables...
-      // Add Top 5 Highest Price Changes
-      let reportYPosition = yPosition;
-
-      pdf.setFontSize(12);
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Top 5 Highest Price Increases", marginLeft, reportYPosition);
-      reportYPosition += 8;
-
-      // Use "Php" to avoid missing glyph rendering ("±") in some PDF fonts
-      const formatSignedCurrency = (value) => {
-        const val = Number(value) || 0;
-        const sign = val < 0 ? "-" : "";
-        return `${sign}Php ${Math.abs(val).toFixed(2)}`;
-      };
-
-      const formatCurrency = (value) => {
-        const val = Number(value) || 0;
-        return `Php ${val.toFixed(2)}`;
-      };
-
-      const formatSignedPercent = (value) => {
-        const val = Number(value) || 0;
-        const sign = val < 0 ? "-" : "";
-        return `${sign}${Math.abs(val).toFixed(1)}%`;
-      };
-
-      const top5Highest = getTop5Highest();
-      const highestTableData = top5Highest.map(item => {
-        const statusInfo = getStatusLabel(item.statusType);
-        return [
-          item.commodity,
-          item.store,
-          formatCurrency(item.previousPrice),
-          formatCurrency(item.srp),
-          formatCurrency(item.currentPrice),
-          formatSignedCurrency(item.priceChange),
-          formatSignedPercent(item.percentChange),
-          statusInfo.label
-        ];
-      });
-
-      autoTable(pdf, {
-        head: [["Commodity", "Store", "Previous Price", "SRP", "Current Price", "Price Change (₱)", "Change (%)", "Status"]],
-        body: highestTableData,
-        startY: reportYPosition,
-        margin: { top: 10, right: 10, bottom: 10, left: 10 },
-        styles: { fontSize: 9, cellPadding: 3 },
-        headStyles: { fillColor: [239, 68, 68], textColor: 255, fontStyle: "bold" },
-        alternateRowStyles: { fillColor: [254, 226, 226] }
-      });
-
-      // Add Top 5 Lowest Price Changes
-      reportYPosition = pdf.lastAutoTable.finalY + 12;
-      if (reportYPosition > pageHeight - 60) {
-        pdf.addPage();
-        reportYPosition = 15;
-      }
-
-      pdf.setFontSize(12);
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Detailed Analysis", marginLeft, yPosition);
-      yPosition += 8;
-
-      // Table Data
-      const exportSource = filteredData.length > 0 ? filteredData : paginatedData;
-      const tableData = exportSource.map(item => [
-        item.commodity,
-        item.size || "--",
-        item.store,
-        `₱${item.prevailingPrice?.toFixed(2) || "0.00"}`,
-        `₱${typeof item.srp === "number" ? item.srp.toFixed(2) : (item.srp ? Number(item.srp).toFixed(2) : "--")}`,
-        `₱${item.currentPrice?.toFixed(2) || "0.00"}`,
-        `${item.priceChange > 0 ? "+" : ""}₱${item.priceChange?.toFixed(2) || "0.00"}`,
-        `${item.percentChange > 0 ? "+" : ""}${item.percentChange?.toFixed(1) || "0.0"}%`,
-        item.isCompliant ? "Compliant" : "Non-Compliant"
-      ]);
-
-      autoTable(pdf, {
-        head: [["Commodity", "Store", "Previous Price", "SRP", "Current Price", "Price Change (₱)", "Change (%)", "Status"]],
-        body: lowestTableData,
-        startY: reportYPosition,
-        margin: { top: 10, right: 10, bottom: 10, left: 10 },
-        styles: { fontSize: 9, cellPadding: 3 },
-        headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: "bold" },
-        alternateRowStyles: { fillColor: [220, 252, 231] }
-      });
-
-      // Add Stores with Highest SRP
-      reportYPosition = pdf.lastAutoTable.finalY + 12;
-      if (reportYPosition > pageHeight - 60) {
-        pdf.addPage();
-        reportYPosition = 15;
-      }
-
-      pdf.setFontSize(12);
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Stores with Highest Average SRP", marginLeft, reportYPosition);
-      reportYPosition += 8;
-
-      const storesHighestSRP = getStoresWithHighestSRP();
-      const storesTableData = storesHighestSRP.map(item => [
-        item.store,
-        `₱${item.avgSRP.toFixed(2)}`,
-        `₱${item.maxSRP.toFixed(2)}`,
-        item.productCount.toString()
-      ]);
-
-      autoTable(pdf, {
-        head: [["Store", "Average SRP", "Max SRP", "Products"]],
-        body: storesTableData,
-        startY: reportYPosition,
-        margin: { top: 10, right: 10, bottom: 10, left: 10 },
-        styles: { fontSize: 9, cellPadding: 3 },
-        headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: "bold" },
-        alternateRowStyles: { fillColor: [235, 245, 254] }
-      });
-
-      // Footer Note
-      const footerYPosition = pdf.lastAutoTable.finalY || reportYPosition;
-      if (footerYPosition < pageHeight - 20) {
-        pdf.setFontSize(9);
-        pdf.text("This report summarizes prevailing prices and compliance status across monitored establishments.", 15, footerYPosition + 10);
-      }
-
-      pdf.save(`Comparative_Analysis_${selectedReportYear || "AllYears"}_${selectedReportMonth ? MONTHS[selectedReportMonth - 1] : "AllMonths"}.pdf`);
-    } catch (error) {
-      console.error("PDF generation error:", error);
-      alert("Failed to generate PDF");
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  // PDF generation moved to src/services/reportGenerator.js
 
 
   // Download as Word (docx) with PDF-like format
-  const downloadAsWord = async () => {
-    // Helper for table row creation
-    const makeTable = (headers, rows) => [
-      new TableRow({
-        children: headers.map(h => new TableCell({
-          children: [new Paragraph({ text: h, bold: true })],
-        }))
-      }),
-      ...rows.map(row => new TableRow({
-        children: row.map(cell => new TableCell({
-          children: [new Paragraph(String(cell))],
-        }))
-      }))
-    ];
+  // Word generation moved to src/services/reportGenerator.js
 
-    // Formatters
-    const formatCurrency = v => `Php ${(Number(v) || 0).toFixed(2)}`;
-    const formatSignedCurrency = v => {
-      const val = Number(v) || 0;
-      const sign = val < 0 ? "-" : "";
-      return `${sign}Php ${Math.abs(val).toFixed(2)}`;
-    };
-    const formatSignedPercent = v => {
-      const val = Number(v) || 0;
-      const sign = val < 0 ? "-" : "";
-      return `${sign}${Math.abs(val).toFixed(1)}%`;
-    };
-
-    // Top 5 Highest/Lowest
-    const top5Highest = getTop5Highest();
-    const top5Lowest = getTop5Lowest();
-    const storesHighestSRP = getStoresWithHighestSRP();
-
-    // Main Table (paginatedData) - REMOVED from Word export as per user request
-
-    // Top 5 Highest Table
-    const highestHeaders = ["Commodity", "Store", "Previous Price", "SRP", "Current Price", "Price Change (₱)", "Change (%)", "Status"];
-    const highestRows = top5Highest.map(item => [
-      item.commodity,
-      item.store,
-      formatCurrency(item.previousPrice),
-      formatCurrency(item.srp),
-      formatCurrency(item.currentPrice),
-      formatSignedCurrency(item.priceChange),
-      formatSignedPercent(item.percentChange),
-      getStatusLabel(item.statusType).label
-    ]);
-
-    // Top 5 Lowest Table
-    const lowestHeaders = ["Commodity", "Store", "Previous Price", "SRP", "Current Price", "Price Change (₱)", "Change (%)", "Status"];
-    const lowestRows = top5Lowest.map(item => [
-      item.commodity,
-      item.store,
-      formatCurrency(item.previousPrice),
-      formatCurrency(item.srp),
-      formatCurrency(item.currentPrice),
-      formatSignedCurrency(item.priceChange),
-      formatSignedPercent(item.percentChange),
-      getStatusLabel(item.statusType).label
-    ]);
-
-    // Stores with Highest SRP Table
-    const storesHeaders = ["Store", "Average SRP", "Max SRP", "Products"];
-    const storesRows = storesHighestSRP.map(item => [
-      item.store,
-      formatCurrency(item.avgSRP),
-      formatCurrency(item.maxSRP),
-      item.productCount
-    ]);
-
-    // Narrative summary (split to lines for docx)
-    const narrativeLines = summaryNarrative.replace(/\s+/g, ' ').trim().split(/\n|\r/).filter(Boolean);
-
-    // Compose document
-    const doc = new Document({
-      sections: [
-        {
-          properties: {},
-          children: [
-            new Paragraph({
-              text: "Comparative Price Analysis Report",
-              heading: "Heading1",
-              spacing: { after: 200 }
-            }),
-            new Paragraph({
-              text: `Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
-              spacing: { after: 200 }
-            }),
-            new Paragraph({ text: "Situationer", heading: "Heading2", spacing: { after: 100 } }),
-            ...narrativeLines.map(line => new Paragraph({ text: line, spacing: { after: 80 } })),
-            new Paragraph({ text: "Top 5 Highest Price Increases", heading: "Heading2", spacing: { after: 100 } }),
-            new Table({ rows: makeTable(highestHeaders, highestRows) }),
-            new Paragraph({ text: "Top 5 Lowest Price Changes (Decreases)", heading: "Heading2", spacing: { after: 100 } }),
-            new Table({ rows: makeTable(lowestHeaders, lowestRows) }),
-            new Paragraph({ text: "Stores with Highest Average SRP", heading: "Heading2", spacing: { after: 100 } }),
-            new Table({ rows: makeTable(storesHeaders, storesRows) }),
-            // Main Data Table REMOVED as per user request
-            new Paragraph({ text: "This report summarizes prevailing prices and compliance status across monitored establishments.", spacing: { before: 200, after: 100 } })
-          ]
-        }
-      ]
-    });
-
-    const blob = await Packer.toBlob(doc);
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `Comparative_Analysis_${new Date().toISOString().split("T")[0]}.docx`;
-    link.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const previewRows = paginatedData.slice(0, 5);
+  const previewRows = (selectedReportMonth || selectedReportYear) ? reportData.slice(0, 5) : paginatedData.slice(0, 5);
 
   // Get status label and color
   const getStatusLabel = (statusType) => {
@@ -803,10 +603,13 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
             <p className="ca-subtitle">Prevailing prices and compliance status across all stores</p>
           </div>
           {/* Export Button */}
-          <div className="ca-export-btns">
+            <div className="ca-export-btns">
             <button
               className="ca-export-btn"
-              onClick={() => setShowReportModal(true)}
+              onClick={() => {
+                setReportNarrative(summaryNarrative);
+                setShowReportModal(true);
+              }}
               disabled={paginatedData.length === 0}
             >
               <Download size={16} />
@@ -872,30 +675,29 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
           <span style={{ fontSize: "0.85rem", color: "#64748b", marginLeft: "auto" }}>
             Showing <strong>{paginatedData.length}</strong> of <strong>{totalRecords}</strong>
           </span>
-          <span style={{ fontSize: "0.85rem", color: "#64748b", marginLeft: "auto" }}>
-            Showing <strong>{paginatedData.length}</strong> of <strong>{totalRecords}</strong>
-          </span>
         </div>
         <div className="ca-table-container" ref={tableRef}>
           <table className="ca-table">
             <thead>
-              <tr style={{ textAlign: "left" }}>
-                <th className="ca-th">COMMODITY</th>
-                <th className="ca-th">SIZE</th>
-                <th className="ca-th">STORE</th>
-                <th className="ca-th">MONTH</th>
-                <th className="ca-th">PREVAILING PRICE</th>
-                <th className="ca-th">SRP</th>
-                <th className="ca-th">CURRENT PRICE</th>
-                <th className="ca-th">PRICE CHANGE</th>
-                <th className="ca-th">CHANGE %</th>
-                <th className="ca-th">STATUS</th>
-              </tr>
+                <tr style={{ textAlign: "left" }}>
+                  <th className="ca-th">BRAND</th>
+                  <th className="ca-th">COMMODITY</th>
+                  <th className="ca-th">SIZE</th>
+                  <th className="ca-th">STORE</th>
+                  <th className="ca-th">YEAR</th>
+                  <th className="ca-th">MONTH</th>
+                  <th className="ca-th">PREVAILING PRICE</th>
+                  <th className="ca-th">SRP</th>
+                  <th className="ca-th">CURRENT PRICE</th>
+                  <th className="ca-th">PRICE CHANGE</th>
+                  <th className="ca-th">CHANGE %</th>
+                  <th className="ca-th">STATUS</th>
+                </tr>
             </thead>
             <tbody>
               {paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="10" style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>
+                  <td colSpan="12" style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>
                     {searchTerm ? "No records match your search" : "No data available for the selected filters"}
                   </td>
                 </tr>
@@ -928,8 +730,11 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
                       }
                     }
                   }
-                  return (
+                    return (
                     <tr key={index} className="ca-row">
+                      <td className="ca-td">
+                        <div style={{ fontWeight: "600", color: "#1e293b" }}>{item.brand || "--"}</div>
+                      </td>
                       <td className="ca-td">
                         <div style={{ fontWeight: "600", color: "#1e293b" }}>{item.commodity}</div>
                       </td>
@@ -938,6 +743,12 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
                       </td>
                       <td className="ca-td">
                         <div style={{ color: "#475569" }}>{item.store}</div>
+                      </td>
+                      <td className="ca-td">
+                        <div style={{ color: "#475569", fontWeight: 700 }}>{(item.year && String(item.year).trim() !== "") ? item.year : "--"}</div>
+                      </td>
+                      <td className="ca-td">
+                        <div style={{ color: "#475569" }}>{(item.month && String(item.month).trim() !== "") ? (typeof item.month === 'number' ? MONTHS[item.month - 1] || item.month : item.month) : "--"}</div>
                       </td>
                       <td style={tdStyle}>
                         <span style={{ fontSize: "0.9rem", fontWeight: "600" }}>{monthDisplay}</span>
@@ -1075,31 +886,48 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
               <div style={summaryChipStyle}>Decreased: {decreasedCount}</div>
             </div>
 
-            <div style={narrativeBoxStyle}>
-              <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: "4px" }}>Situationer</div>
-              <div style={{ color: "#475569", lineHeight: 1.4 }}>{summaryNarrative}</div>
-            </div>
+              <div style={narrativeBoxStyle}>
+                <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: "8px" }}>Situationer</div>
+                <textarea
+                  value={reportNarrative}
+                  onChange={(e) => { setReportNarrative(e.target.value); setIsNarrativeEdited(true); }}
+                  style={{
+                    width: "100%",
+                    minHeight: 120,
+                    resize: "vertical",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #e2e8f0",
+                    color: "#475569",
+                    lineHeight: 1.4,
+                    fontSize: "0.95rem",
+                    background: "#fff"
+                  }}
+                />
+              </div>
 
-            <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflow: "hidden", marginBottom: "16px" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflowX: "auto", overflowY: "hidden", marginBottom: "16px" }}>
+              <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", textAlign: "left" }}>
+                    <th style={modalThStyle}>Brand</th>
                     <th style={modalThStyle}>Commodity</th>
                     <th style={modalThStyle}>Store</th>
-                    <th style={modalThStyle}>Prevailing</th>
+                    <th style={modalThStyle}>Prevailing Price</th>
                     <th style={modalThStyle}>SRP</th>
-                    <th style={modalThStyle}>Current</th>
+                    <th style={modalThStyle}>Current Price</th>
                     <th style={modalThStyle}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {previewRows.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: "center", padding: "16px", color: "#94a3b8" }}>No data to preview</td>
+                      <td colSpan="7" style={{ textAlign: "center", padding: "16px", color: "#94a3b8" }}>No data to preview</td>
                     </tr>
                   ) : (
                     previewRows.map((row, idx) => (
                       <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={modalTdStyle}>{row.brand || "--"}</td>
                         <td style={modalTdStyle}>{row.commodity}</td>
                         <td style={modalTdStyle}>{row.store}</td>
                         <td style={modalTdStyle}>{Number(row.prevailingPrice) === 0 || Number.isNaN(Number(row.prevailingPrice)) ? "--" : `₱${Number(row.prevailingPrice).toFixed(2)}`}</td>
@@ -1133,7 +961,24 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
               <div style={{ color: "#64748b", fontSize: "0.9rem" }}>Choose export format:</div>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <button
-                  onClick={() => { generatePDFReport(); setShowReportModal(false); }}
+                  onClick={async () => {
+                    setIsExporting(true);
+                    try {
+                      await generatePDF({
+                        reportSource,
+                        selectedReportMonth,
+                        selectedReportYear,
+                        summaryNarrative: reportNarrative || summaryNarrative,
+                        MONTHS,
+                        getStatusLabel
+                      });
+                    } catch (e) {
+                      console.error('PDF export failed', e);
+                    } finally {
+                      setIsExporting(false);
+                      setShowReportModal(false);
+                    }
+                  }}
                   disabled={isExporting || totalRecords === 0}
                   style={{
                     ...exportButtonStyle,
@@ -1144,7 +989,21 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
                   <Download size={16} /> PDF
                 </button>
                 <button
-                  onClick={() => { downloadAsWord(); setShowReportModal(false); }}
+                  onClick={async () => {
+                    try {
+                      await generateWord({
+                        reportSource,
+                        selectedReportMonth,
+                        selectedReportYear,
+                        summaryNarrative: reportNarrative || summaryNarrative,
+                        getStatusLabel
+                      });
+                    } catch (e) {
+                      console.error('Word export failed', e);
+                    } finally {
+                      setShowReportModal(false);
+                    }
+                  }}
                   disabled={totalRecords === 0}
                   style={{
                     ...exportButtonStyle,
