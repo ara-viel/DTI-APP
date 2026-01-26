@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import ToastContainer from './components/ToastContainer.jsx';
 import { addPriceData, getPriceData, deletePriceData, updatePriceData } from './services/priceService.js';
 import Dashboard from './components/Dashboard.jsx';
 import Monitoring from './components/Monitoring.jsx';
@@ -36,7 +37,11 @@ function App() {
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSave = async () => {
-    if (!form.commodity || !form.price) return alert("Please fill in key fields");
+    if (!form.commodity || !form.price) {
+      if (window.toast && window.toast.error) window.toast.error("Please fill in key fields");
+      else alert("Please fill in key fields");
+      return;
+    }
     await addPriceData({
       ...form,
       price: Number(form.price),
@@ -47,6 +52,7 @@ function App() {
     setForm({ commodity: "", store: "", municipality: "", price: "", prevPrice: "", srp: "" });
     loadData();
     setActiveTab("dashboard");
+    if (window.toast && window.toast.success) window.toast.success('Record successfully saved!');
   };
 
   const handleImportSuccess = async (importedData, category) => {
@@ -67,15 +73,17 @@ function App() {
       });
     }
     loadData(); // Reload all data
+    if (window.toast && window.toast.success) window.toast.success(`Imported ${importedData.length} records`);
   };
 
   const handleDeleteData = async (id) => {
     try {
       await deletePriceData(id);
       loadData();
+      if (window.toast && window.toast.success) window.toast.success('Record successfully deleted!');
     } catch (error) {
       console.error("Error deleting data:", error);
-      alert("Failed to delete record");
+      if (window.toast && window.toast.error) window.toast.error('Failed to delete record');
     }
   };
 
@@ -83,9 +91,10 @@ function App() {
     try {
       await updatePriceData(id, updatedData);
       loadData();
+      if (window.toast && window.toast.success) window.toast.success('Record successfully updated!');
     } catch (error) {
       console.error("Error updating data:", error);
-      alert("Failed to update record");
+      if (window.toast && window.toast.error) window.toast.error('Failed to update record');
     }
   };
 
@@ -263,6 +272,8 @@ function App() {
       </main>
 
       {showImport && <FileImport onImportSuccess={handleImportSuccess} onClose={() => setShowImport(false)} />}
+
+      <ToastContainer />
 
       <div className="back-to-top">
         <button onClick={scrollToTop} title="Back to Top"><ArrowUp size={30} /></button>

@@ -596,14 +596,7 @@ SRP Landscape: The store with the highest average SRP is ${topStore} at ₱${top
         <div className="ca-counts-row">
           <span>Commodities: <strong>{filteredCommodityCount}</strong></span>
           <span>Stores: <strong>{filteredStoreCount}</strong></span>
-        </div>
-        <div className="ca-header-row">
-          <div>
-            <h3 className="ca-title">Comparative Price Analysis</h3>
-            <p className="ca-subtitle">Prevailing prices and compliance status across all stores</p>
-          </div>
-          {/* Export Button */}
-            <div className="ca-export-btns">
+          <div style={{ marginLeft: "auto" }}>
             <button
               className="ca-export-btn"
               onClick={() => {
@@ -616,9 +609,15 @@ SRP Landscape: The store with the highest average SRP is ${topStore} at ₱${top
               Generate Report
             </button>
           </div>
-          {/* Filters */}
-          <div className="ca-filters-row">
-            <div className="ca-filters-selects">
+        </div>
+        <div className="ca-header-row">
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div>
+              <h3 className="ca-title">Comparative Price Analysis</h3>
+              <p className="ca-subtitle">Prevailing prices and compliance status across all stores</p>
+            </div>
+            
+            <div className="ca-filters-selects" style={{ display: "flex", gap: 8, marginLeft: 8 }}>
               <select
                 className="ca-select"
                 value={selectedCommodity}
@@ -749,9 +748,6 @@ SRP Landscape: The store with the highest average SRP is ${topStore} at ₱${top
                       </td>
                       <td className="ca-td">
                         <div style={{ color: "#475569" }}>{(item.month && String(item.month).trim() !== "") ? (typeof item.month === 'number' ? MONTHS[item.month - 1] || item.month : item.month) : "--"}</div>
-                      </td>
-                      <td style={tdStyle}>
-                        <span style={{ fontSize: "0.9rem", fontWeight: "600" }}>{monthDisplay}</span>
                       </td>
                       <td style={tdStyle}>
                         <span style={{ fontSize: "0.9rem", fontWeight: "600" }}>
@@ -916,13 +912,14 @@ SRP Landscape: The store with the highest average SRP is ${topStore} at ₱${top
                     <th style={modalThStyle}>Prevailing Price</th>
                     <th style={modalThStyle}>SRP</th>
                     <th style={modalThStyle}>Current Price</th>
+                    <th style={modalThStyle}>Price Change</th>
                     <th style={modalThStyle}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {previewRows.length === 0 ? (
                     <tr>
-                      <td colSpan="7" style={{ textAlign: "center", padding: "16px", color: "#94a3b8" }}>No data to preview</td>
+                      <td colSpan="8" style={{ textAlign: "center", padding: "16px", color: "#94a3b8" }}>No data to preview</td>
                     </tr>
                   ) : (
                     previewRows.map((row, idx) => (
@@ -933,6 +930,12 @@ SRP Landscape: The store with the highest average SRP is ${topStore} at ₱${top
                         <td style={modalTdStyle}>{Number(row.prevailingPrice) === 0 || Number.isNaN(Number(row.prevailingPrice)) ? "--" : `₱${Number(row.prevailingPrice).toFixed(2)}`}</td>
                         <td style={modalTdStyle}>{Number(row.srp) === 0 || Number.isNaN(Number(row.srp)) ? "--" : `₱${Number(row.srp).toFixed(2)}`}</td>
                         <td style={modalTdStyle}>{Number(row.currentPrice) === 0 || Number.isNaN(Number(row.currentPrice)) ? "--" : `₱${Number(row.currentPrice).toFixed(2)}`}</td>
+                        <td style={modalTdStyle}>
+                          {row.priceChange === 0 || row.priceChange === undefined || row.priceChange === null
+                            ? "--"
+                            : `${row.priceChange > 0 ? "+" : ""}₱${Number(row.priceChange).toFixed(2)} (${row.percentChange > 0 ? "+" : ""}${Number(row.percentChange).toFixed(1)}%)`
+                          }
+                        </td>
                         <td style={modalTdStyle}>
                           <span style={{
                             display: "inline-flex",
@@ -972,8 +975,10 @@ SRP Landscape: The store with the highest average SRP is ${topStore} at ₱${top
                         MONTHS,
                         getStatusLabel
                       });
+                      if (window.toast && window.toast.success) window.toast.success('PDF successfully exported!');
                     } catch (e) {
                       console.error('PDF export failed', e);
+                      if (window.toast && window.toast.error) window.toast.error('PDF export failed');
                     } finally {
                       setIsExporting(false);
                       setShowReportModal(false);
@@ -998,8 +1003,10 @@ SRP Landscape: The store with the highest average SRP is ${topStore} at ₱${top
                         summaryNarrative: reportNarrative || summaryNarrative,
                         getStatusLabel
                       });
+                      if (window.toast && window.toast.success) window.toast.success('Word exported');
                     } catch (e) {
                       console.error('Word export failed', e);
+                      if (window.toast && window.toast.error) window.toast.error('Word export failed');
                     } finally {
                       setShowReportModal(false);
                     }

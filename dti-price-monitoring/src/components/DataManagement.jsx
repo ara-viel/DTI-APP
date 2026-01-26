@@ -242,21 +242,29 @@ export default function DataManagement({ prices, onAddData, onDeleteData, onUpda
 
   const handleAddNew = async () => {
     if (!newForm.commodity || !newForm.price) {
-      alert("Please fill in commodity and price");
+      if (window.toast && window.toast.error) window.toast.error("Please fill in commodity and price");
+      else alert("Please fill in commodity and price");
       return;
     }
     const categoryToSave = activeCategory || "";
-    await onAddData({
-      ...newForm,
-      price: Number(newForm.price),
-      srp: newForm.srp === "" ? "" : Number(newForm.srp),
-      years: newForm.years || new Date().getFullYear().toString(),
-      timestamp: new Date().toISOString(),
-      category: categoryToSave
-    });
-    setNewForm({ brand: "", commodity: "", month: "", price: "", srp: "", size: "", store: "", variant: "", years: "" });
-    setShowAddForm(false);
-    setCurrentPage(1);
+    try {
+      await onAddData({
+        ...newForm,
+        price: Number(newForm.price),
+        srp: newForm.srp === "" ? "" : Number(newForm.srp),
+        years: newForm.years || new Date().getFullYear().toString(),
+        timestamp: new Date().toISOString(),
+        category: categoryToSave
+      });
+      setNewForm({ brand: "", commodity: "", month: "", price: "", srp: "", size: "", store: "", variant: "", years: "" });
+      setShowAddForm(false);
+      setCurrentPage(1);
+      if (window.toast && window.toast.success) window.toast.success('Record successfully added');
+    } catch (err) {
+      console.error('Add new record failed', err);
+      if (window.toast && window.toast.error) window.toast.error('Failed to add record');
+      else alert('Failed to add record');
+    }
   };
 
   const handleFormChange = (field, value) => {
@@ -265,7 +273,8 @@ export default function DataManagement({ prices, onAddData, onDeleteData, onUpda
 
   const exportToCSV = () => {
     if (!prices || prices.length === 0) {
-      alert("No data to export");
+      if (window.toast && window.toast.info) window.toast.info("No data to export");
+      else alert("No data to export");
       return;
     }
 
@@ -293,6 +302,7 @@ export default function DataManagement({ prices, onAddData, onDeleteData, onUpda
     a.href = url;
     a.download = `price_data_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
+    if (window.toast && window.toast.success) window.toast.success('CSV successfully exported!');
   };
 
   // Sort header component

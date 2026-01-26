@@ -7,7 +7,8 @@ export default function EditRecordModal({ isOpen, onClose, formData, onChange, o
 
   const handleSave = async () => {
     if (!formData.commodity || !formData.price) {
-      alert("Please fill in commodity and price");
+      if (window.toast && window.toast.error) window.toast.error("Please fill in commodity and price");
+      else alert("Please fill in commodity and price");
       return;
     }
     await onSave();
