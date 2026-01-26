@@ -54,15 +54,15 @@ function App() {
       const normalized = {};
       Object.keys(record || {}).forEach(k => normalized[k.toLowerCase()] = record[k]);
       await addPriceData({
-        brand: normalizedRecord.brand || '',
-        commodity: normalizedRecord.commodity || 'Unknown',
-        month: normalizedRecord.month || '',
-        price: Number(normalizedRecord.price) || 0,
-        size: normalizedRecord.size || '',
-        store: normalizedRecord.store || '',
-        variant: normalizedRecord.variant || '',
-        years: normalizedRecord.years || new Date().getFullYear().toString(),
-        timestamp: normalizedRecord.timestamp || new Date().toISOString()
+        brand: normalized.brand || '',
+        commodity: normalized.commodity || 'Unknown',
+        month: normalized.month || '',
+        price: Number(normalized.price) || 0,
+        size: normalized.size || '',
+        store: normalized.store || '',
+        variant: normalized.variant || '',
+        years: normalized.years || new Date().getFullYear().toString(),
+        timestamp: normalized.timestamp || new Date().toISOString()
       });
     }
     loadData(); // Reload all data
@@ -181,7 +181,7 @@ function App() {
   };
 
   return (
-    <div className="app-root" style={{ ['--sidebar-width']: sidebarWidth, ['--content-padding']: contentPadding, ['--content-maxwidth']: contentMaxWidth }}>
+    <div className="app-root" style={{ ['--sidebar-width']: '260px', ['--content-padding']: '40px', ['--content-maxwidth']: '1200px' }}>
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           <button className="icon-btn" onClick={() => setIsSidebarCollapsed(prev => !prev)} aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
@@ -250,6 +250,7 @@ function App() {
               onDeleteData={handleDeleteData}
               onUpdateData={handleUpdateData}
               onImportClick={() => setShowImport(true)}
+              subTab={dataMgmtTab}
             />
           )}
         </div>
