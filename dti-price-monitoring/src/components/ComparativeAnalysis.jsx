@@ -940,13 +940,24 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
                         <div style={{ color: "#475569" }}>{item.store}</div>
                       </td>
                       <td style={tdStyle}>
-                        <span style={{ fontSize: "1rem", fontWeight: "600" }}>₱{(item.prevailingPrice || 0).toFixed(2)}</span>
+                        <span style={{ fontSize: "0.9rem", fontWeight: "600" }}>{monthDisplay}</span>
                       </td>
                       <td style={tdStyle}>
-                        <span style={{ color: "#64748b" }}>₱{typeof item.srp === 'number' ? item.srp.toFixed(2) : (item.srp ? Number(item.srp).toFixed(2) : "--")}</span>
+                        <span style={{ fontSize: "0.9rem", fontWeight: "600" }}>
+                          {Number(item.prevailingPrice) === 0 || !item.prevailingPrice
+                            ? "--"
+                            : `₱${Number(item.prevailingPrice).toFixed(2)}`}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>
+                        <span style={{ fontSize: "0.9rem", color: "#64748b" }}>
+                          {Number(item.srp) === 0 || !item.srp
+                            ? "--"
+                            : `₱${Number(item.srp).toFixed(2)}`}
+                        </span>
                       </td>
                       <td className="ca-td">
-                        <span style={{ fontSize: "1.05rem", fontWeight: "600", color: isCompliant ? "#22c55e" : "#ef4444" }}>
+                        <span style={{ fontSize: "0.9rem", fontWeight: "600", color: isCompliant ? "#22c55e" : "#ef4444" }}>
                           {Number(item.currentPrice) === 0 || Number.isNaN(Number(item.currentPrice))
                             ? "--"
                             : `₱${Number(item.currentPrice).toFixed(2)}`}
@@ -954,18 +965,25 @@ SRP Landscape: The store with the highest average SRP is ${storesHighestList[0]?
                       </td>
                       <td className="ca-td">
                         <div style={{ display: "flex", alignItems: "center", gap: "4px", color: item.priceChange > 0 ? "#ef4444" : item.priceChange < 0 ? "#22c55e" : "#64748b", fontWeight: "600" }}>
-                          {item.priceChange > 0 && <TrendingUp size={16} />}
-                          {item.priceChange < 0 && <TrendingDown size={16} />}
-                          <span>
-                            {item.priceChange > 0 ? "+" : ""}
-                            ₱{(item.priceChange || 0).toFixed(2)}
-                          </span>
+                          {item.priceChange === 0 || !item.priceChange ? (
+                            <span>--</span>
+                          ) : (
+                            <>
+                              {item.priceChange > 0 && <TrendingUp size={16} />}
+                              {item.priceChange < 0 && <TrendingDown size={16} />}
+                              <span>
+                                {item.priceChange > 0 ? "+" : ""}
+                                ₱{item.priceChange.toFixed(2)}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </td>
                       <td className="ca-td">
                         <span style={{ color: item.priceChange > 0 ? "#ef4444" : item.priceChange < 0 ? "#22c55e" : "#64748b", fontWeight: "600" }}>
-                          {item.percentChange > 0 ? "+" : ""}
-                          {(item.percentChange || 0).toFixed(1)}%
+                          {item.percentChange === 0 || !item.percentChange
+                            ? "--"
+                            : `${item.percentChange > 0 ? "+" : ""}${item.percentChange.toFixed(1)}%`}
                         </span>
                       </td>
                       <td className="ca-td">
