@@ -36,7 +36,7 @@ const parseDTIFormat = (rows, sheetName = '') => {
   // Find header row - starts with BASIC NECESSITIES or PRIME COMMODITIES
   // Also check column 0 for these keywords anywhere in the row (headers might be shifted)
   for (let i = 0; i < Math.min(50, rows.length); i++) {
-    const row = rows[i];
+    const row = rows[i];git 
     if (!row) continue;
     
     // Check all cells in this row for category keywords

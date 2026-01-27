@@ -95,6 +95,7 @@ const tdStyle = modalTdStyle;
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { TrendingUp, TrendingDown, Search, X, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { generatePDF, generateWord } from "../services/reportGenerator";
+import { computePrevailingPrice } from "../services/prevailingCalculator";
 import "../assets/ComparativeAnalysis.css";
 
 // Helper to get month names
@@ -277,20 +278,8 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [] }) {
         // Use the actual SRP from the most recent record, not a lookup table
         const srp = sortedPrices[0]?.srp || 0;
 
-        const pickHighestLatest = (arr) => {
-          if (!arr || arr.length === 0) return 0;
-          const best = arr.reduce((best, curr) => {
-            if (!best) return curr;
-            if (curr.price > best.price) return curr;
-            if (curr.price === best.price && (curr.ts || 0) > (best.ts || 0)) return curr;
-            return best;
-          }, null);
-          return best ? best.price : 0;
-        };
-
-        const withSrp = group.prices.filter(r => r.srp > 0 && r.price <= r.srp);
-        const noSrp = group.prices.filter(r => !r.srp || Number.isNaN(r.srp) || r.srp === 0);
-        const prevailingPrice = withSrp.length > 0 ? pickHighestLatest(withSrp) : pickHighestLatest(noSrp);
+        // Prevailing price rules moved to shared calculator: mode > highest, cap at SRP
+        const prevailingPrice = computePrevailingPrice(group.prices, srp);
 
         // Determine status based on price changes
         let statusType = "decreased"; // Default to decreased
