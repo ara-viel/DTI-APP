@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import ToastContainer from './components/ToastContainer.jsx';
 import { addPriceData, getPriceData, deletePriceData, updatePriceData } from './services/priceService.js';
+import { addBasicNecessitiesData, getBasicNecessitiesData, deleteBasicNecessitiesData, updateBasicNecessitiesData } from './services/basicNecessitiesService.js';
+import { addPrimeCommoditiesData, getPrimeCommoditiesData, deletePrimeCommoditiesData, updatePrimeCommoditiesData } from './services/primeCommoditiesService.js';
+import { addConstructionMaterialsData, getConstructionMaterialsData, deleteConstructionMaterialsData, updateConstructionMaterialsData } from './services/constructionMaterialsService.js';
 import Dashboard from './components/Dashboard.jsx';
 import Monitoring from './components/Monitoring.jsx';
 import Inquiry from "./components/Inquiry.jsx";
@@ -34,8 +37,29 @@ function App() {
   useEffect(() => { if (activeTab !== "dataManagement") setIsDataMgmtOpen(false); }, [activeTab]);
 
   const loadData = async () => {
-    const data = await getPriceData();
-    setPrices(data || []);
+    try {
+      // Fetch data from all three category collections and the general prices collection
+      const [basicData, primeData, constructionData, generalData] = await Promise.all([
+        getBasicNecessitiesData().catch(() => []),
+        getPrimeCommoditiesData().catch(() => []),
+        getConstructionMaterialsData().catch(() => []),
+        getPriceData().catch(() => [])
+      ]);
+      
+      // Combine all data
+      const allData = [
+        ...(basicData || []),
+        ...(primeData || []),
+        ...(constructionData || []),
+        ...(generalData || [])
+      ];
+      
+      console.log(`📊 Loaded ${allData.length} total records (Basic: ${basicData?.length || 0}, Prime: ${primeData?.length || 0}, Construction: ${constructionData?.length || 0}, General: ${generalData?.length || 0})`);
+      setPrices(allData || []);
+    } catch (error) {
+      console.error("❌ Error loading data:", error);
+      setPrices([]);
+    }
   };
 
   useEffect(() => { loadData(); }, []);
@@ -66,24 +90,72 @@ function App() {
   };
 
   const handleImportSuccess = async (importedData, category) => {
-    for (const record of importedData) {
-      const normalized = {};
-      Object.keys(record || {}).forEach(k => normalized[k.toLowerCase()] = record[k]);
-      await addPriceData({
-        brand: normalized.brand || '',
-        commodity: normalized.commodity || 'Unknown',
-        month: normalized.month || '',
-        price: Number(normalized.price) || 0,
-        srp: normalized.srp === '' || normalized.srp === undefined ? '' : Number(normalized.srp),
-        size: normalized.size || '',
-        store: normalized.store || '',
-        variant: normalized.variant || '',
-        years: normalized.years || new Date().getFullYear().toString(),
-        timestamp: normalized.timestamp || new Date().toISOString()
-      });
+    try {
+      let successCount = 0;
+      const errors = [];
+      
+      // Helper function to route to correct service based on brand
+      const addToCorrectService = async (data, brand) => {
+        if (brand === 'BASIC NECESSITIES') {
+          return await addBasicNecessitiesData(data);
+        } else if (brand === 'PRIME COMMODITIES') {
+          return await addPrimeCommoditiesData(data);
+        } else if (brand === 'CONSTRUCTION MATERIALS') {
+          return await addConstructionMaterialsData(data);
+        } else {
+          // Fallback to general service
+          return await addPriceData(data);
+        }
+      };
+      
+      for (let i = 0; i < importedData.length; i++) {
+        const record = importedData[i];
+        try {
+          const normalized = {};
+          Object.keys(record || {}).forEach(k => normalized[k.toLowerCase()] = record[k]);
+          
+          const dataToSave = {
+            brand: normalized.brand || '',
+            commodity: normalized.commodity || 'Unknown',
+            month: normalized.month || '',
+            price: Number(normalized.price) || 0,
+            srp: normalized.srp === '' || normalized.srp === undefined ? '' : Number(normalized.srp),
+            size: normalized.size || '',
+            store: normalized.store || '',
+            variant: normalized.variant || '',
+            years: normalized.years || new Date().getFullYear().toString(),
+            timestamp: normalized.timestamp || new Date().toISOString()
+          };
+          
+          // If BPCM is selected, auto-sort by brand; otherwise use selected category
+          const targetBrand = category === 'BPCM' ? normalized.brand : category;
+          
+          await addToCorrectService(dataToSave, targetBrand);
+          successCount++;
+        } catch (recordError) {
+          console.error(`❌ Error importing record ${i + 1}:`, recordError);
+          errors.push(`Record ${i + 1}: ${recordError.message}`);
+        }
+      }
+      
+      loadData(); // Reload all data
+      if (successCount > 0) {
+        if (window.toast && window.toast.success) {
+          window.toast.success(`✅ Imported ${successCount} records successfully!`);
+        }
+      }
+      if (errors.length > 0) {
+        console.error('Import errors:', errors);
+        if (window.toast && window.toast.error) {
+          window.toast.error(`⚠️ ${errors.length} records failed. Check console for details.`);
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error during import:", error);
+      if (window.toast && window.toast.error) {
+        window.toast.error(`Import failed: ${error.message}`);
+      }
     }
-    loadData(); // Reload all data
-    if (window.toast && window.toast.success) window.toast.success(`Imported ${importedData.length} records`);
   };
 
   const handleDeleteData = async (id) => {

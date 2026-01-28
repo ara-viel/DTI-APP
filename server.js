@@ -42,6 +42,9 @@ const priceSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const PriceData = mongoose.model('PriceData', priceSchema);
+const BasicNecessities = mongoose.model('BasicNecessities', priceSchema);
+const PrimeCommodities = mongoose.model('PrimeCommodities', priceSchema);
+const ConstructionMaterials = mongoose.model('ConstructionMaterials', priceSchema);
 
 // Routes
 // Get all price data
@@ -96,6 +99,183 @@ app.put('/api/prices/:id', async (req, res) => {
 app.delete('/api/prices/:id', async (req, res) => {
   try {
     const deleted = await PriceData.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Record not found' });
+    res.json({ message: 'Deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== BASIC NECESSITIES ENDPOINTS ==========
+// Get all Basic Necessities data
+app.get('/api/basic-necessities', async (req, res) => {
+  try {
+    const data = await BasicNecessities.find().sort({ timestamp: -1 });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add new Basic Necessities data
+app.post('/api/basic-necessities', async (req, res) => {
+  try {
+    const payload = { ...req.body };
+    if (!payload.commodity) payload.commodity = 'Unknown';
+    if (typeof payload.price !== 'number' || payload.price === null) payload.price = 0;
+    if (!payload.brand) payload.brand = 'BASIC NECESSITIES';
+    if (!payload.month) payload.month = '';
+    if (!payload.years) payload.years = new Date().getFullYear().toString();
+    if (!payload.size) payload.size = '';
+    if (!payload.store) payload.store = '';
+    if (!payload.variant) payload.variant = '';
+    if (!payload.timestamp) payload.timestamp = new Date();
+
+    const newRecord = new BasicNecessities(payload);
+    await newRecord.save();
+    console.log(`✅ Basic Necessities record saved`);
+    res.status(201).json(newRecord);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Update Basic Necessities data
+app.put('/api/basic-necessities/:id', async (req, res) => {
+  try {
+    const update = { ...req.body };
+    if (!update.timestamp) update.timestamp = new Date();
+
+    const updated = await BasicNecessities.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!updated) return res.status(404).json({ error: 'Record not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Basic Necessities data
+app.delete('/api/basic-necessities/:id', async (req, res) => {
+  try {
+    const deleted = await BasicNecessities.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Record not found' });
+    res.json({ message: 'Deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== PRIME COMMODITIES ENDPOINTS ==========
+// Get all Prime Commodities data
+app.get('/api/prime-commodities', async (req, res) => {
+  try {
+    const data = await PrimeCommodities.find().sort({ timestamp: -1 });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add new Prime Commodities data
+app.post('/api/prime-commodities', async (req, res) => {
+  try {
+    const payload = { ...req.body };
+    if (!payload.commodity) payload.commodity = 'Unknown';
+    if (typeof payload.price !== 'number' || payload.price === null) payload.price = 0;
+    if (!payload.brand) payload.brand = 'PRIME COMMODITIES';
+    if (!payload.month) payload.month = '';
+    if (!payload.years) payload.years = new Date().getFullYear().toString();
+    if (!payload.size) payload.size = '';
+    if (!payload.store) payload.store = '';
+    if (!payload.variant) payload.variant = '';
+    if (!payload.timestamp) payload.timestamp = new Date();
+
+    const newRecord = new PrimeCommodities(payload);
+    await newRecord.save();
+    console.log(`✅ Prime Commodities record saved`);
+    res.status(201).json(newRecord);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Update Prime Commodities data
+app.put('/api/prime-commodities/:id', async (req, res) => {
+  try {
+    const update = { ...req.body };
+    if (!update.timestamp) update.timestamp = new Date();
+
+    const updated = await PrimeCommodities.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!updated) return res.status(404).json({ error: 'Record not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Prime Commodities data
+app.delete('/api/prime-commodities/:id', async (req, res) => {
+  try {
+    const deleted = await PrimeCommodities.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Record not found' });
+    res.json({ message: 'Deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== CONSTRUCTION MATERIALS ENDPOINTS ==========
+// Get all Construction Materials data
+app.get('/api/construction-materials', async (req, res) => {
+  try {
+    const data = await ConstructionMaterials.find().sort({ timestamp: -1 });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add new Construction Materials data
+app.post('/api/construction-materials', async (req, res) => {
+  try {
+    const payload = { ...req.body };
+    if (!payload.commodity) payload.commodity = 'Unknown';
+    if (typeof payload.price !== 'number' || payload.price === null) payload.price = 0;
+    if (!payload.brand) payload.brand = 'CONSTRUCTION MATERIALS';
+    if (!payload.month) payload.month = '';
+    if (!payload.years) payload.years = new Date().getFullYear().toString();
+    if (!payload.size) payload.size = '';
+    if (!payload.store) payload.store = '';
+    if (!payload.variant) payload.variant = '';
+    if (!payload.timestamp) payload.timestamp = new Date();
+
+    const newRecord = new ConstructionMaterials(payload);
+    await newRecord.save();
+    console.log(`✅ Construction Materials record saved`);
+    res.status(201).json(newRecord);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Update Construction Materials data
+app.put('/api/construction-materials/:id', async (req, res) => {
+  try {
+    const update = { ...req.body };
+    if (!update.timestamp) update.timestamp = new Date();
+
+    const updated = await ConstructionMaterials.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!updated) return res.status(404).json({ error: 'Record not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Construction Materials data
+app.delete('/api/construction-materials/:id', async (req, res) => {
+  try {
+    const deleted = await ConstructionMaterials.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Record not found' });
     res.json({ message: 'Deleted successfully' });
   } catch (err) {

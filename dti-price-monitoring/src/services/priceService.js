@@ -4,14 +4,19 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 // Function to Add Monitoring Data
 export const addPriceData = async (data) => {
   try {
+    console.log(`📤 Sending data to ${API_URL}/prices:`, data);
     const response = await fetch(`${API_URL}/prices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (!response.ok) throw new Error('Failed to add data');
-    console.log("✅ Data saved to MongoDB");
-    return await response.json();
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    const result = await response.json();
+    console.log("✅ Data saved to MongoDB:", result);
+    return result;
   } catch (e) {
     console.error("❌ Error adding document: ", e);
     throw e;
