@@ -214,8 +214,9 @@ export default function Inquiry({ prices }) {
       const srpDisplay = srp > 0 ? formatCurrency(srp) : "N/A";
       const prevDisplay = prevMonthPrice > 0 ? formatCurrency(prevMonthPrice) : "N/A";
       const priceDisplay = price > 0 ? formatCurrency(price) : "N/A";
-      const hasVariance = (price !== 0 || srp !== 0);
-      const varianceDisplay = hasVariance ? formatCurrency(price - srp) : "N/A";
+      const comparisonPrice = srp > 0 ? srp : prevMonthPrice;
+      const hasVariance = (price !== 0 && comparisonPrice !== 0);
+      const varianceDisplay = hasVariance ? formatCurrency(price - comparisonPrice) : "N/A";
       return `        <tr>
           <td>${commodity}</td>
           <td>${brand}</td>
@@ -645,6 +646,7 @@ ${commodityRows}
                               <thead>
                                 <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.75rem" }}>
                                   <th style={thStyle}>Commodity</th>
+                                  <th style={thStyle}>Brand</th>
                                   <th style={thStyle}>Size/Unit</th>
                                   <th style={thStyle}>Current Price</th>
                                   <th style={thStyle}>Previous Price</th>
@@ -655,14 +657,16 @@ ${commodityRows}
                               </thead>
                               <tbody>
                                 {items.map(item => {
-                                  const v = Number(item.price || 0) - Number(item.srp || 0);
-                                  const percentChange = Number(item.srp || 0) > 0 ? ((v / Number(item.srp)) * 100) : 0;
+                                  const previousPriceDetail = getPreviousPriceForDetail(item);
+                                  const comparisonPrice = Number(item.srp || 0) > 0 ? Number(item.srp) : previousPriceDetail;
+                                  const v = Number(item.price || 0) - comparisonPrice;
+                                  const percentChange = comparisonPrice > 0 ? ((v / comparisonPrice) * 100) : 0;
                                   const varianceColor = v < 0 ? "#f59e0b" : v > 0 ? "#dc2626" : "#0f172a";
                                   const changeColor = percentChange < 0 ? "#f59e0b" : percentChange > 0 ? "#dc2626" : "#0f172a";
-                                  const previousPriceDetail = getPreviousPriceForDetail(item);
                                   return (
                                     <tr key={item.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
                                       <td style={tdStyle}>{item.commodity || "--"}</td>
+                                      <td style={tdStyle}>{item.brand || "--"}</td>
                                       <td style={tdStyle}>{item.size || "--"}</td>
                                       <td style={tdStyle}>{formatCurrency(item.price)}</td>
                                       <td style={tdStyle}>{previousPriceDetail > 0 ? formatCurrency(previousPriceDetail) : "--"}</td>
