@@ -166,12 +166,7 @@ function App() {
         window.toast.error(`Import failed: ${error.message}`);
       }
     }
-<<<<<<< Updated upstream
-
-    loadData(); 
-=======
     loadData();
->>>>>>> Stashed changes
     if (window.toast && window.toast.success) window.toast.success(`Imported ${importedData.length} records`);
   };
 
