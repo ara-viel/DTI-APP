@@ -153,7 +153,9 @@ const normalizeYearValue = (val) => {
 
 // Component entry is declared below; keep helpers at module scope
 export default function ComparativeAnalysis({ prices, monitoringData = null, prevailingReport = [], initialFilters = {} }) {
-
+=======
+export default function ComparativeAnalysis({ prices, prevailingReport = [], initialFilters = {} }) {
+>>>>>>> Stashed changes
   // For case-sensitive table behavior keep original casing but trim whitespace
   const canonical = (s) => (s === undefined || s === null) ? "" : String(s).trim();
   const [selectedCommodity, setSelectedCommodity] = useState("all");
@@ -580,7 +582,9 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
         const currentPrice = currentRec ? currentRec.price : null;
         const previousPrice = previousRec ? previousRec.price : null;
         const priceChange = (currentPrice !== null && previousPrice !== null) ? (currentPrice - previousPrice) : null;
-        const percentChange = (previousPrice !== null && previousPrice !== 0 && priceChange !== null) ? ((priceChange / previousPrice) * 100) : null;        
+        const percentChange = (previousPrice !== null && previousPrice !== 0 && priceChange !== null) ? ((priceChange / previousPrice) * 100) : null;
+<<<<<<< Updated upstream
+        
         
         // Prevailing price across this bucket (mode -> prefer highest price when tied -> fallback to highest price)
         const freq = {};
@@ -627,6 +631,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
         const srpEntry = srpLookup[srpKey] || srpLookup[bucket.commodity] || { value: 0 };
         const srp = srpEntry?.value || 0;
 
+<<<<<<< Updated upstream
         let statusType = "decreased";
         if (previousPrice !== null && currentPrice !== null) {
           if (currentPrice > previousPrice) {
@@ -642,7 +647,24 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
           // no previous to compare to and not above SRP
           statusType = "stable";
         }
+=======
+        // Prevailing price rules moved to shared calculator: mode > highest, cap at SRP
+        const prevailingPrice = computePrevailingPrice(recs, srp);
 
+        // Determine status based on price changes
+        let statusType = "decreased"; // Default to decreased
+        
+        if (currentPrice !== null && previousPrice !== null) {
+          if (currentPrice > previousPrice) {
+            statusType = "higher-than-previous";
+          } else if (currentPrice > srp && srp > 0) {
+            statusType = "higher-than-srp";
+          } else if (currentPrice < previousPrice) {
+            statusType = "decreased";
+          }
+        }
+
+>>>>>>> Stashed changes
         const isCompliant = srp > 0 ? (currentPrice < srp * 1.10 && currentPrice > srp * 0.90) : true;
 
         const storesArr = Array.from(bucket.stores || []);

@@ -40,6 +40,10 @@ const getWorkingDaysRemaining = (deadline) => {
 
 export default function Inquiry({ prices }) {
   const [selectedIds, setSelectedIds] = useState([]);
+  
+  // Debug: log prices to console
+  console.log('📋 Inquiry component received prices:', prices?.length || 0, 'items');
+  
   const [letter, setLetter] = useState({
     subject: "Letter of Inquiry",
     officerName: "Jane Marie L. Tabucan",
@@ -88,13 +92,70 @@ export default function Inquiry({ prices }) {
     );
   };
 
+  const normalizeField = (val) => {
+    if (val === undefined || val === null) return "";
+    const v = Array.isArray(val) ? (val[0] ?? "") : val;
+    return String(v).trim();
+  };
+
+  const getBrandValue = (it) => {
+    if (!it) return "";
+    if (it.brand) return normalizeField(it.brand);
+    if (it.brands) return normalizeField(it.brands);
+    return "";
+  };
+
+  const getSizeValue = (it) => {
+    if (!it) return "";
+    return normalizeField(it.size ?? it.sizeUnit ?? it.unit ?? it.uom);
+  };
+
+  const getStoreValue = (it) => normalizeField(it?.store ?? "");
+
+  const getTimestampValue = (it) => {
+    if (!it) return 0;
+    if (it.timestamp) return new Date(it.timestamp).getTime() || 0;
+    if (it.ts) return Number(it.ts) || 0;
+    if (it.createdAt) return new Date(it.createdAt).getTime() || 0;
+    return 0;
+  };
+
+  const getPreviousMonthPrice = (item) => {
+    const commodityKey = normalizeField(item?.commodity ?? "");
+    const brandKey = getBrandValue(item);
+    const sizeKey = getSizeValue(item);
+    const storeKey = getStoreValue(item);
+
+    const matchingRecords = prices.filter(p =>
+      normalizeField(p?.commodity ?? "") === commodityKey &&
+      getBrandValue(p) === brandKey &&
+      getSizeValue(p) === sizeKey &&
+      getStoreValue(p) === storeKey
+    ).sort((a, b) => getTimestampValue(b) - getTimestampValue(a));
+
+    return matchingRecords.length > 1 ? Number(matchingRecords[1].price || 0) : 0;
+  };
+
+  const getPreviousPriceForDetail = (item) => getPreviousMonthPrice(item);
+
   const flaggedItems = useMemo(
     () => prices.filter((p) => {
       const srp = Number(p.srp || 0);
       const price = Number(p.price || 0);
+      const prevPrice = getPreviousMonthPrice(p);
 
-      // Flagged only if price exceeds SRP
-      if (srp > 0 && price > srp) return true;
+      // Filter 1: Price exceeds SRP
+      // If SRP exists, check if price > SRP
+      // If no SRP, check if price > previous month's price
+      if (srp > 0) {
+        if (price > srp) return true;
+      } else {
+        if (prevPrice > 0 && price > prevPrice) return true;
+      }
+
+      // Filter 2: Price drops 10% or more
+      // If current price is 10% or lower compared to previous month's price
+      if (prevPrice > 0 && price <= prevPrice * 0.9) return true;
 
       return false;
     }),
@@ -134,28 +195,6 @@ export default function Inquiry({ prices }) {
     setExpandedStores(prev =>
       prev.includes(storeKey) ? prev.filter(s => s !== storeKey) : [...prev, storeKey]
     );
-  };
-
-  const getPreviousMonthPrice = (item) => {
-    const currentMonth = Number(item.month);
-    const currentYear = Number(item.year);
-    let prevMonth = currentMonth - 1;
-    let prevYear = currentYear;
-
-    if (prevMonth < 1) {
-      prevMonth = 12;
-      prevYear -= 1;
-    }
-
-    // Find matching item from previous month with same commodity and store
-    const prevMonthItem = prices.find(p => 
-      p.commodity === item.commodity &&
-      p.store === item.store &&
-      Number(p.month) === prevMonth &&
-      Number(p.year) === prevYear
-    );
-
-    return prevMonthItem ? Number(prevMonthItem.price || 0) : 0;
   };
 
   const generateContent = (items) => {
@@ -204,7 +243,7 @@ export default function Inquiry({ prices }) {
             <th style="width: 11%;">Brand</th>
             <th style="width: 8%;">Size</th>
             <th style="width: 8%;">SRP</th>
-            <th style="width: 11%;">Previous Month Price</th>
+            <th style="width: 11%;">Previous Price</th>
             <th style="width: 11.5%;">Monitored Price</th>
             <th style="width: 10%;">Variance</th>
             <th style="width: 29%;">Remarks</th>
@@ -505,19 +544,19 @@ ${commodityRows}
                   
                   const daysLeft = getWorkingDaysRemaining(record.deadline);
                   
-                  let statusColor = "#059669"; // green
+                  let statusColor = "#059669"; // green - More than 3 days remaining
                   let statusText = `${daysLeft} day(s) left`;
                   let statusBg = "#d1fae5";
                   
-                  if (daysLeft === 0) {
-                    statusColor = "#d97706";
-                    statusText = "Due Today";
-                    statusBg = "#fef3c7";
-                  } else if (daysLeft < 0) {
+                  if (daysLeft < 0) {
                     statusColor = "#dc2626";
                     statusText = "Overdue";
                     statusBg = "#fee2e2";
-                  } else if (daysLeft <= 2) {
+                  } else if (daysLeft === 0) {
+                    statusColor = "#d97706";
+                    statusText = "Due Today";
+                    statusBg = "#fef3c7";
+                  } else if (daysLeft <= 3) {
                     statusColor = "#d97706";
                     statusBg = "#fef3c7";
                   }
@@ -552,7 +591,7 @@ ${commodityRows}
       {/* Flagged entries moved to the top */}
       <div style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-          <h4 style={{ margin: 0, color: "#0f172a" }}>Flagged Entries (Price above SRP)</h4>
+          <h4 style={{ margin: 0, color: "#0f172a" }}>Flagged Entries</h4>
           <span style={tagStyle}>{flaggedItems.length} item(s)</span>
         </div>
         <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "360px" }}>
@@ -607,8 +646,8 @@ ${commodityRows}
                                 <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.75rem" }}>
                                   <th style={thStyle}>Commodity</th>
                                   <th style={thStyle}>Size/Unit</th>
-                                  <th style={thStyle}>Price</th>
-                                  <th style={thStyle}>Previous Month</th>
+                                  <th style={thStyle}>Current Price</th>
+                                  <th style={thStyle}>Previous Price</th>
                                   <th style={thStyle}>SRP</th>
                                   <th style={thStyle}>Variance</th>
                                   <th style={thStyle}>Change %</th>
@@ -620,12 +659,13 @@ ${commodityRows}
                                   const percentChange = Number(item.srp || 0) > 0 ? ((v / Number(item.srp)) * 100) : 0;
                                   const varianceColor = v < 0 ? "#f59e0b" : v > 0 ? "#dc2626" : "#0f172a";
                                   const changeColor = percentChange < 0 ? "#f59e0b" : percentChange > 0 ? "#dc2626" : "#0f172a";
+                                  const previousPriceDetail = getPreviousPriceForDetail(item);
                                   return (
                                     <tr key={item.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
                                       <td style={tdStyle}>{item.commodity || "--"}</td>
                                       <td style={tdStyle}>{item.size || "--"}</td>
                                       <td style={tdStyle}>{formatCurrency(item.price)}</td>
-                                      <td style={tdStyle}>{Number(item.prevMonthPrice || 0) > 0 ? formatCurrency(item.prevMonthPrice) : "--"}</td>
+                                      <td style={tdStyle}>{previousPriceDetail > 0 ? formatCurrency(previousPriceDetail) : "--"}</td>
                                       <td style={tdStyle}>{formatCurrency(item.srp)}</td>
                                       <td style={{ ...tdStyle, color: varianceColor }}>{formatCurrency(v)}</td>
                                       <td style={{ ...tdStyle, color: changeColor, fontWeight: "600" }}>
