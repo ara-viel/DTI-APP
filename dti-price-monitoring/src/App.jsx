@@ -301,7 +301,7 @@ function App() {
   // Pre-auth routes: Landing -> Login -> App
   if (!isLoggedIn) {
     if (showLoginPage) {
-      return <LoginPage onAuthenticated={handleLogin} />;
+      return <LoginPage onAuthenticated={handleLogin} onHomeClick={() => setShowLoginPage(false)} />;
     }
     return <LandingPage onLoginClick={() => setShowLoginPage(true)} />;
   }
