@@ -2,6 +2,42 @@ import React, { useMemo, useState, useRef, useEffect } from "react";
 
 const formatCurrency = (value) => `\u20b1${Number(value || 0).toFixed(2)}`;
 
+// Calculate working days (excluding weekends)
+const addWorkingDays = (startDate, days) => {
+  let current = new Date(startDate);
+  let added = 0;
+  while (added < days) {
+    current.setDate(current.getDate() + 1);
+    const dayOfWeek = current.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not Sunday (0) or Saturday (6)
+      added++;
+    }
+  }
+  return current;
+};
+
+const getWorkingDaysRemaining = (deadline) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const deadlineDate = new Date(deadline);
+  deadlineDate.setHours(0, 0, 0, 0);
+  
+  let count = 0;
+  let current = new Date(today);
+  
+  while (current < deadlineDate) {
+    current.setDate(current.getDate() + 1);
+    const dayOfWeek = current.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      count++;
+    }
+  }
+  
+  if (deadlineDate < today) return -1; // Overdue
+  if (deadlineDate.getTime() === today.getTime()) return 0; // Due today
+  return count;
+};
+
 export default function Inquiry({ prices }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [letter, setLetter] = useState({
@@ -13,8 +49,18 @@ export default function Inquiry({ prices }) {
   });
   const [expandedStores, setExpandedStores] = useState([]);
   const [showPrintConfirm, setShowPrintConfirm] = useState(false);
+  const [printedStores, setPrintedStores] = useState(() => {
+    const saved = localStorage.getItem("printedStores");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [currentStore, setCurrentStore] = useState(null);
   const previewRef = useRef(null);
   const isUserEditingRef = useRef(false);
+
+  // Save printed stores to localStorage
+  useEffect(() => {
+    localStorage.setItem("printedStores", JSON.stringify(printedStores));
+  }, [printedStores]);
 
   const toggleSelection = (id) => {
     setSelectedIds(prev => 
@@ -26,33 +72,9 @@ export default function Inquiry({ prices }) {
     () => prices.filter((p) => {
       const srp = Number(p.srp || 0);
       const price = Number(p.price || 0);
-      const currentYear = Number(p.year);
-      const currentMonth = Number(p.month);
 
-      // Find previous month price dynamically (same year only)
-      let prevMonth = currentMonth - 1;
-      let prevYear = currentYear;
-      if (prevMonth < 1) {
-        prevMonth = 12;
-        prevYear -= 1;
-      }
-      const prevMonthItem = prices.find(item => 
-        item.commodity === p.commodity &&
-        item.store === p.store &&
-        Number(item.month) === prevMonth &&
-        Number(item.year) === prevYear
-      );
-      const prevMonthPrice = prevMonthItem ? Number(prevMonthItem.price || 0) : 0;
-
-      // Flagged if price exceeds SRP, or if no SRP, exceeds previous month's price (same year only)
-      const referencePrice = srp > 0 ? srp : (prevMonthPrice > 0 ? prevMonthPrice : 0);
-      if (referencePrice > 0 && currentYear === p.year && price > referencePrice) return true;
-
-      // Flagged if current price is 10% lower than previous month's price (same year only)
-      if (prevMonthPrice > 0 && currentYear === p.year) {
-        const percentChange = ((price - prevMonthPrice) / prevMonthPrice) * 100;
-        if (percentChange <= -10) return true;
-      }
+      // Flagged only if price exceeds SRP
+      if (srp > 0 && price > srp) return true;
 
       return false;
     }),
@@ -63,11 +85,13 @@ export default function Inquiry({ prices }) {
     const groups = {};
     flaggedItems.forEach((item) => {
       const key = item.store || "Unknown";
+      // Skip if this store has already been printed
+      if (printedStores.some(p => p.store === key)) return;
       if (!groups[key]) groups[key] = [];
       groups[key].push(item);
     });
     return groups;
-  }, [flaggedItems]);
+  }, [flaggedItems, printedStores]);
 
   const firstFlaggedIndexByStore = useMemo(() => {
     const map = {};
@@ -195,6 +219,9 @@ ${commodityRows}
 
   const printLetter = () => {
     if (!letter.content.trim()) return;
+    const items = prices.filter(p => selectedIds.includes(p.id));
+    const store = items[0]?.store || "Unknown";
+    setCurrentStore(store);
     setShowPrintConfirm(true);
   };
 
@@ -202,7 +229,21 @@ ${commodityRows}
 
   const handlePrintConfirm = () => {
     setShowPrintConfirm(false);
+    const items = prices.filter(p => selectedIds.includes(p.id));
+    const store = items[0]?.store || "Unknown";
+    
     executePrint();
+    
+    // Mark this store as printed with date and deadline
+    if (store && !printedStores.some(p => p.store === store)) {
+      const datePrinted = new Date();
+      const deadline = addWorkingDays(datePrinted, 5);
+      setPrintedStores([...printedStores, { 
+        store: store, 
+        datePrinted: datePrinted.toISOString(),
+        deadline: deadline.toISOString()
+      }]);
+    }
   };
 
   const handlePreviewInput = (e) => {
@@ -336,6 +377,84 @@ ${commodityRows}
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px", fontFamily: "'Inter', sans-serif" }}>
+      {/* Response Tracker Section */}
+      {printedStores.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <h4 style={{ margin: 0, color: "#0f172a" }}>Response Tracker (5 Working Days)</h4>
+            <span style={tagStyle}>{printedStores.length} letter(s) sent</span>
+          </div>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "360px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "#64748b", fontSize: "0.75rem" }}>
+                  <th style={thStyle}>Store</th>
+                  <th style={thStyle}>Date Printed</th>
+                  <th style={thStyle}>Deadline</th>
+                  <th style={thStyle}>Days Remaining</th>
+                  <th style={thStyle}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {printedStores.map((record, idx) => {
+                  // Parse dates safely
+                  const datePrintedObj = new Date(record.datePrinted);
+                  const deadlineObj = new Date(record.deadline);
+                  
+                  // Format dates safely with fallback
+                  const dateSent = !isNaN(datePrintedObj) 
+                    ? datePrintedObj.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                    : "—";
+                  const deadlineDate = !isNaN(deadlineObj)
+                    ? deadlineObj.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                    : "—";
+                  
+                  const daysLeft = getWorkingDaysRemaining(record.deadline);
+                  
+                  let statusColor = "#059669"; // green
+                  let statusText = `${daysLeft} day(s) left`;
+                  let statusBg = "#d1fae5";
+                  
+                  if (daysLeft === 0) {
+                    statusColor = "#d97706";
+                    statusText = "Due Today";
+                    statusBg = "#fef3c7";
+                  } else if (daysLeft < 0) {
+                    statusColor = "#dc2626";
+                    statusText = "Overdue";
+                    statusBg = "#fee2e2";
+                  } else if (daysLeft <= 2) {
+                    statusColor = "#d97706";
+                    statusBg = "#fef3c7";
+                  }
+                  
+                  return (
+                    <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={tdStyle}>{record.store}</td>
+                      <td style={tdStyle}>{dateSent}</td>
+                      <td style={tdStyle}>{deadlineDate}</td>
+                      <td style={{ ...tdStyle, fontWeight: "600", color: statusColor }}>{daysLeft >= 0 ? daysLeft : "—"}</td>
+                      <td style={tdStyle}>
+                        <span style={{ 
+                          background: statusBg, 
+                          color: statusColor, 
+                          padding: "4px 10px", 
+                          borderRadius: "12px", 
+                          fontSize: "0.8rem", 
+                          fontWeight: "700" 
+                        }}>
+                          {statusText}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Flagged entries moved to the top */}
       <div style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
@@ -515,13 +634,18 @@ ${commodityRows}
                 </div>
                 <div
                   ref={previewRef}
-                  contentEditable
+                  contentEditable={!printedStores.some(p => p.store === currentStore)}
                   suppressContentEditableWarning
                   onInput={handlePreviewInput}
                   onFocus={handlePreviewFocus}
                   onBlur={handlePreviewBlur}
-                  style={{ minHeight: "240px", outline: "none" }}
+                  style={{ minHeight: "240px", outline: "none", opacity: printedStores.some(p => p.store === currentStore) ? 0.6 : 1, pointerEvents: printedStores.some(p => p.store === currentStore) ? "none" : "auto" }}
                 />
+                {printedStores.some(p => p.store === currentStore) && (
+                  <div style={{ marginTop: "12px", padding: "12px", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "8px", color: "#92400e" }}>
+                    <strong>⚠️ This letter for {currentStore} has been printed.</strong> Editing is now locked. You can only print additional copies.
+                  </div>
+                )}
                 <div className="received-group">
                   <div className="signature">
                     <div className="sig-name">{letter.officerName || ""}</div>

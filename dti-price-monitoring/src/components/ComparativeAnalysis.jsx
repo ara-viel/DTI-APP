@@ -104,7 +104,10 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December"
 ];
 
+<<<<<<< Updated upstream
 // Component entry is declared below; keep helpers at module scope
+=======
+>>>>>>> Stashed changes
 // Normalizers: accept full month names, common abbreviations (e.g. "Jan"), numeric strings, and numbers
 const normalizeMonthValue = (val) => {
   // Accept numbers, numeric strings, full month names, common abbreviations
@@ -152,7 +155,11 @@ const normalizeYearValue = (val) => {
   return Number.isFinite(n) ? n : "ALL";
 };
 
+<<<<<<< Updated upstream
 export default function ComparativeAnalysis({ prices, monitoringData = null, prevailingReport = [], initialFilters = {} }) {
+=======
+export default function ComparativeAnalysis({ prices, prevailingReport = [], initialFilters = {} }) {
+>>>>>>> Stashed changes
   // For case-sensitive table behavior keep original casing but trim whitespace
   const canonical = (s) => (s === undefined || s === null) ? "" : String(s).trim();
   const [selectedCommodity, setSelectedCommodity] = useState("all");
@@ -578,6 +585,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
 
       const results = [];
       Object.values(aggregatedBuckets).forEach(bucket => {
+<<<<<<< Updated upstream
         // sort by timestamp descending so index 0 is the latest and index 1 is the previous (second-latest)
         const recs = bucket.records.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
         const currentRec = recs.length ? recs[0] : null;
@@ -649,6 +657,35 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
           statusType = "stable";
         }
 
+=======
+        const recs = bucket.records.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        const latest = recs.length ? recs[recs.length - 1] : null;
+        const previous = recs.length > 1 ? recs[recs.length - 2] : null;
+        const currentPrice = latest ? latest.price : 0;
+        const previousPrice = previous ? previous.price : 0;
+        const priceChange = currentPrice - previousPrice;
+        const percentChange = previousPrice !== 0 ? ((priceChange / previousPrice) * 100) : 0;
+
+        // SRP lookup using brand+size key then fallback to commodity
+        const srpKey = `${bucket.commodity}__${bucket.brand || ""}__${bucket.size || ""}`;
+        const srpEntry = srpLookup[srpKey] || srpLookup[bucket.commodity] || { value: 0 };
+        const srp = srpEntry?.value || 0;
+
+        // Prevailing price rules moved to shared calculator: mode > highest, cap at SRP
+        const prevailingPrice = computePrevailingPrice(recs, srp);
+
+        // Determine status based on price changes
+        let statusType = "decreased"; // Default to decreased
+        
+        if (currentPrice > previousPrice) {
+          statusType = "higher-than-previous";
+        } else if (currentPrice > srp && srp > 0) {
+          statusType = "higher-than-srp";
+        } else if (currentPrice < previousPrice) {
+          statusType = "decreased";
+        }
+
+>>>>>>> Stashed changes
         const isCompliant = srp > 0 ? (currentPrice < srp * 1.10 && currentPrice > srp * 0.90) : true;
 
         const storesArr = Array.from(bucket.stores || []);
