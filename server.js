@@ -46,6 +46,17 @@ const BasicNecessities = mongoose.model('BasicNecessities', priceSchema);
 const PrimeCommodities = mongoose.model('PrimeCommodities', priceSchema);
 const ConstructionMaterials = mongoose.model('ConstructionMaterials', priceSchema);
 
+// Printed Letters Tracker Schema
+const printedLetterSchema = new mongoose.Schema({
+  store: { type: String, required: true, trim: true },
+  datePrinted: { type: Date, required: true },
+  deadline: { type: Date, required: true },
+  printedBy: { type: String, default: "", trim: true },
+  createdAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+const PrintedLetter = mongoose.model('PrintedLetter', printedLetterSchema);
+
 // User Schema
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true, trim: true },
@@ -477,6 +488,52 @@ app.post('/api/migrate', async (req, res) => {
         removed: ['prevPrice', 'municipality', 'srp']
       }
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== PRINTED LETTERS TRACKER ENDPOINTS ==========
+// Get all printed letters
+app.get('/api/printed-letters', async (req, res) => {
+  try {
+    const letters = await PrintedLetter.find().sort({ datePrinted: -1 });
+    res.json(letters);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add new printed letter record
+app.post('/api/printed-letters', async (req, res) => {
+  try {
+    const { store, datePrinted, deadline, printedBy } = req.body;
+    
+    if (!store || !datePrinted || !deadline) {
+      return res.status(400).json({ error: 'Store, datePrinted, and deadline are required' });
+    }
+
+    const newLetter = new PrintedLetter({
+      store,
+      datePrinted: new Date(datePrinted),
+      deadline: new Date(deadline),
+      printedBy: printedBy || ''
+    });
+
+    await newLetter.save();
+    console.log(`✅ Printed letter record saved for store: ${store}`);
+    res.status(201).json(newLetter);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Delete printed letter record
+app.delete('/api/printed-letters/:id', async (req, res) => {
+  try {
+    const deleted = await PrintedLetter.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Record not found' });
+    res.json({ message: 'Printed letter record deleted', deleted });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

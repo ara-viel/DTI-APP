@@ -49,18 +49,38 @@ export default function Inquiry({ prices }) {
   });
   const [expandedStores, setExpandedStores] = useState([]);
   const [showPrintConfirm, setShowPrintConfirm] = useState(false);
-  const [printedStores, setPrintedStores] = useState(() => {
-    const saved = localStorage.getItem("printedStores");
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [printedStores, setPrintedStores] = useState([]);
   const [currentStore, setCurrentStore] = useState(null);
   const previewRef = useRef(null);
   const isUserEditingRef = useRef(false);
+  const [showPrintResultConfirm, setShowPrintResultConfirm] = useState(false);
+  const [pendingPrintRecord, setPendingPrintRecord] = useState(null);
+  const printResultShownRef = useRef(false);
+  const [draftedStore, setDraftedStore] = useState(null);
 
-  // Save printed stores to localStorage
+  // Load printed letters from database on component mount
   useEffect(() => {
-    localStorage.setItem("printedStores", JSON.stringify(printedStores));
-  }, [printedStores]);
+    const loadPrintedLetters = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/api/printed-letters');
+        if (response.ok) {
+          const data = await response.json();
+          setPrintedStores(data.map(letter => ({
+            _id: letter._id,
+            store: letter.store,
+            datePrinted: letter.datePrinted,
+            deadline: letter.deadline
+          })));
+        }
+      } catch (error) {
+        console.error('Failed to load printed letters:', error);
+        // Fallback to localStorage
+        const saved = localStorage.getItem("printedStores");
+        if (saved) setPrintedStores(JSON.parse(saved));
+      }
+    };
+    loadPrintedLetters();
+  }, []);
 
   const toggleSelection = (id) => {
     setSelectedIds(prev => 
@@ -203,6 +223,7 @@ ${commodityRows}
 
     const commodityList = items.map(i => i.commodity).join(", ");
     setLetter((prev) => ({ ...prev, subject: `Price Inquiry - ${commodityList}`, content: body }));
+    setDraftedStore(items[0]?.store || "Unknown");
   };
 
   const handleLetterChange = (e) => {
@@ -227,22 +248,93 @@ ${commodityRows}
 
   const handlePrintCancel = () => setShowPrintConfirm(false);
 
+  const savePrintedRecord = async (record) => {
+    if (!record || !record.store) return;
+    try {
+      const response = await fetch('http://localhost:5000/api/printed-letters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          store: record.store,
+          datePrinted: record.datePrinted,
+          deadline: record.deadline
+        })
+      });
+
+      if (response.ok) {
+        const savedLetter = await response.json();
+        setPrintedStores(prev => ([...prev, {
+          _id: savedLetter._id,
+          store: savedLetter.store,
+          datePrinted: savedLetter.datePrinted,
+          deadline: savedLetter.deadline
+        }]));
+        console.log('✅ Letter tracking saved to database');
+      } else {
+        throw new Error('Failed to save to database');
+      }
+    } catch (error) {
+      console.error('Failed to save printed letter to database:', error);
+      // Fallback to state-only update
+      setPrintedStores(prev => ([...prev, {
+        store: record.store,
+        datePrinted: record.datePrinted,
+        deadline: record.deadline
+      }]));
+      // Also save to localStorage as backup
+      localStorage.setItem("printedStores", JSON.stringify([
+        ...printedStores,
+        { store: record.store, datePrinted: record.datePrinted, deadline: record.deadline }
+      ]));
+    }
+  };
+
   const handlePrintConfirm = () => {
     setShowPrintConfirm(false);
     const items = prices.filter(p => selectedIds.includes(p.id));
     const store = items[0]?.store || "Unknown";
-    
-    executePrint();
-    
-    // Mark this store as printed with date and deadline
-    if (store && !printedStores.some(p => p.store === store)) {
-      const datePrinted = new Date();
-      const deadline = addWorkingDays(datePrinted, 5);
-      setPrintedStores([...printedStores, { 
-        store: store, 
+    const alreadyPrinted = printedStores.some(p => p.store === store);
+    const datePrinted = new Date();
+    const deadline = addWorkingDays(datePrinted, 5);
+
+    if (!alreadyPrinted) {
+      setPendingPrintRecord({
+        store,
         datePrinted: datePrinted.toISOString(),
         deadline: deadline.toISOString()
-      }]);
+      });
+    } else {
+      setPendingPrintRecord(null);
+    }
+
+    printResultShownRef.current = false;
+    const promptForResult = () => {
+      if (printResultShownRef.current) return;
+      printResultShownRef.current = true;
+      if (!alreadyPrinted) setShowPrintResultConfirm(true);
+    };
+
+    const printWindow = executePrint(promptForResult);
+    if (printWindow) {
+      const intervalId = setInterval(() => {
+        if (printWindow.closed) {
+          clearInterval(intervalId);
+          promptForResult();
+        }
+      }, 500);
+    }
+  };
+
+  const handlePrintResultCancel = () => {
+    setShowPrintResultConfirm(false);
+    setPendingPrintRecord(null);
+  };
+
+  const handlePrintResultConfirm = async () => {
+    setShowPrintResultConfirm(false);
+    if (pendingPrintRecord) {
+      await savePrintedRecord(pendingPrintRecord);
+      setPendingPrintRecord(null);
     }
   };
 
@@ -271,7 +363,7 @@ ${commodityRows}
     node.innerHTML = letter.content || "<div class='letter-body'><p style='color: #94a3b8;'>Auto-generated letter will appear here.</p></div>";
   }, [letter.content]);
 
-  const executePrint = () => {
+  const executePrint = (onComplete) => {
     const printWindow = window.open("", "_blank");
     printWindow.document.write(`
       <html>
@@ -368,9 +460,11 @@ ${commodityRows}
     const restoreEdit = () => {
       window.focus();
       setTimeout(focusPreview, 50);
+      if (onComplete) onComplete();
     };
     printWindow.onafterprint = restoreEdit;
     printWindow.onbeforeunload = restoreEdit;
+    return printWindow;
   };
 
   const selectedItems = prices.filter(p => selectedIds.includes(p.id));
@@ -497,9 +591,9 @@ ${commodityRows}
                           </button>
                           <button
                             onClick={() => { setSelectedIds(items.map(i => i.id)); generateContent(items); }}
-                            style={{ ...miniButtonStyle, background: "#0f172a", color: "white" }}
+                            style={{ ...miniButtonStyle, background: draftedStore === storeKey ? "#16a34a" : "#0f172a", color: "white" }}
                           >
-                            Draft letter
+                            {draftedStore === storeKey ? "Drafted ✓" : "Draft letter"}
                           </button>
                         </div>
                       </td>
@@ -703,6 +797,19 @@ ${commodityRows}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
               <button onClick={handlePrintCancel} style={{ ...buttonStyle, background: "#e2e8f0", color: "#0f172a" }}>Cancel</button>
               <button onClick={handlePrintConfirm} style={{ ...buttonStyle, background: "#0f172a", color: "white" }}>Proceed</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPrintResultConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "16px" }}>
+          <div style={{ background: "white", padding: "24px", borderRadius: "16px", width: "420px", maxWidth: "92vw", boxShadow: "0 16px 44px rgba(0,0,0,0.22)" }}>
+            <h4 style={{ margin: "0 0 10px 0", color: "#0f172a" }}>Did the print complete?</h4>
+            <p style={{ margin: "0 0 16px 0", color: "#475569", fontSize: "0.95rem", lineHeight: 1.5, textAlign: "justify" }}>If you clicked <strong>Cancel</strong> in the print dialog, choose <strong>No</strong> so this letter won’t be recorded as printed and you can still edit it. Choose <strong>Yes</strong> only if the letter was successfully printed.</p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button onClick={handlePrintResultCancel} style={{ ...buttonStyle, background: "#e2e8f0", color: "#0f172a" }}>No</button>
+              <button onClick={handlePrintResultConfirm} style={{ ...buttonStyle, background: "#0f172a", color: "white" }}>Yes</button>
             </div>
           </div>
         </div>
