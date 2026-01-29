@@ -246,7 +246,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
       if (typeof normalized === 'number') months.add(normalized);
     });
     return Array.from(months).sort((a, b) => a - b);
-  }, [pricesArray]);
+  }, [pricesArray, selectedStore]);
 
   const availableYears = useMemo(() => {
     const years = new Set();
@@ -258,7 +258,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
       }
     });
     return Array.from(years).sort((a, b) => b - a);
-  }, [pricesArray]);
+  }, [pricesArray, selectedStore, selectedCommodity]);
 
   // Get unique commodities and stores for filters (dedupe case-insensitively)
   const uniqueCommodities = useMemo(() => {
@@ -276,7 +276,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
     // return alphabetically sorted list (preserve original casing)
     const arr = Array.from(map.values()).sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' }));
     return ["all", ...arr];
-  }, [pricesArray]);
+  }, [pricesArray, selectedStore]);
 
   const uniqueStores = useMemo(() => {
     const map = new Map();
@@ -286,7 +286,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
       if (!map.has(key)) map.set(key, p.store);
     });
     return Array.from(map.values());
-  }, [pricesArray]);
+  }, [pricesArray, selectedStore, selectedCommodity]);
 
   // Unique brands for brand filter (sorted alphabetically)
   const uniqueBrands = useMemo(() => {
@@ -377,8 +377,25 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
         const mKey = normalizeMonthValue(item.month);
         const rawYear2 = (item.year ?? item.years) ?? (item.timestamp ? new Date(item.timestamp).getFullYear() : undefined);
         const yKey = normalizeYearValue(rawYear2);
-        if (monthFilterVal && mKey !== monthFilterVal) return false;
-        if (yearFilterVal && yKey !== yearFilterVal) return false;
+
+        // If month filter is set, include both the selected month and the immediate previous month
+        if (monthFilterVal) {
+          const selM = Number(monthFilterVal);
+          if (yearFilterVal) {
+            const selY = Number(yearFilterVal);
+            const prevM = selM === 1 ? 12 : selM - 1;
+            const prevY = selM === 1 ? selY - 1 : selY;
+            const matchesSelected = (mKey === selM && yKey === selY);
+            const matchesPrev = (mKey === prevM && yKey === prevY);
+            if (!(matchesSelected || matchesPrev)) return false;
+          } else {
+            const prevM = selM === 1 ? 12 : selM - 1;
+            if (!(mKey === selM || mKey === prevM)) return false;
+          }
+        } else if (yearFilterVal) {
+          if (yKey !== yearFilterVal) return false;
+        }
+
         return true;
       });
 
@@ -405,9 +422,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
         const monthKey = itemMonthKey;
         const yearKey = itemYearKey;
 
-        // filter out records that don't match the active table filters
-        if (monthFilterVal && monthKey !== monthFilterVal) return;
-        if (yearFilterVal && yearKey !== yearFilterVal) return;
+        // Note: activePrices already respects table filters (including previous-month inclusion)
 
         const key = `${item.commodity}_${itemBrand || "UnknownBrand"}_${item.size || ""}_${item.store || "Unknown"}_${monthKey}_${yearKey}`;
         if (!grouped[key]) {
