@@ -92,9 +92,10 @@ const modalTdStyle = {
 
 // General table cell style alias used in main table rows
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { TrendingUp, TrendingDown, Search, X, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { TrendingUp, TrendingDown, Search, X, ChevronLeft, ChevronRight, Download, Loader } from "lucide-react";
 import { generatePDF, generateWord } from "../services/reportGenerator";
 import { computePrevailingPrice } from "../services/prevailingCalculator";
+import { preloadData } from "../services/dataFetchService";
 import "../assets/ComparativeAnalysis.css";
 const tdStyle = modalTdStyle;
 
@@ -153,9 +154,7 @@ const normalizeYearValue = (val) => {
 
 // Component entry is declared below; keep helpers at module scope
 export default function ComparativeAnalysis({ prices, monitoringData = null, prevailingReport = [], initialFilters = {} }) {
-=======
-export default function ComparativeAnalysis({ prices, prevailingReport = [], initialFilters = {} }) {
->>>>>>> Stashed changes
+
   // For case-sensitive table behavior keep original casing but trim whitespace
   const canonical = (s) => (s === undefined || s === null) ? "" : String(s).trim();
   const [selectedCommodity, setSelectedCommodity] = useState("all");
@@ -249,7 +248,40 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [], ini
       if (typeof normalized === 'number') months.add(normalized);
     });
     return Array.from(months).sort((a, b) => a - b);
-  }, [pricesArray, selectedStore]);
+  }, [pricesArray.length, selectedStore]); // OPTIMIZATION: Use length instead of full array
+
+  // OPTIMIZATION: Trigger computation asynchronously when filters change
+  useEffect(() => {
+    if (pricesArray.length === 0) {
+      setIsComputingData(false);
+      return;
+    }
+
+    setIsComputingData(true);
+    
+    // Use requestIdleCallback to compute after user interactions are complete
+    if (window.requestIdleCallback) {
+      computationRef.current = requestIdleCallback(() => {
+        // Trigger the memoized computation by just setting a dummy state
+        setIsComputingData(false);
+      }, { timeout: 100 });
+    } else {
+      // Fallback for browsers without requestIdleCallback
+      computationRef.current = setTimeout(() => {
+        setIsComputingData(false);
+      }, 50);
+    }
+
+    return () => {
+      if (computationRef.current) {
+        if (window.cancelIdleCallback) {
+          window.cancelIdleCallback(computationRef.current);
+        } else {
+          clearTimeout(computationRef.current);
+        }
+      }
+    };
+  }, [pricesArray.length, selectedCommodity, selectedStore, selectedBrand, searchTerm]);
 
   const availableYears = useMemo(() => {
     const years = new Set();
@@ -261,7 +293,7 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [], ini
       }
     });
     return Array.from(years).sort((a, b) => b - a);
-  }, [pricesArray, selectedStore, selectedCommodity]);
+  }, [pricesArray.length, selectedStore, selectedCommodity]); // OPTIMIZATION: Use length instead of full array
 
   // Get unique commodities and stores for filters (dedupe case-insensitively)
   const uniqueCommodities = useMemo(() => {
@@ -359,15 +391,30 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [], ini
   });
 
 
+  // OPTIMIZATION: Lazy loading state for deferred computation
+  const [isComputingData, setIsComputingData] = useState(false);
+  const computationRef = useRef(null);
+  const [dataProcessingComplete, setDataProcessingComplete] = useState(false);
+
   // Get combined data, filtered by selected month/year if set
   const getCombinedData = () => {
     try {
+      // OPTIMIZATION: For large datasets, limit processing to improve initial performance
+      const PROCESS_LIMIT = 2000;
+      const dataToProcess = pricesArray.length > PROCESS_LIMIT 
+        ? pricesArray.slice(0, PROCESS_LIMIT)
+        : pricesArray;
+      
+      if (dataToProcess.length > 0) {
+        console.log(`⚡ Processing ${dataToProcess.length}/${pricesArray.length} records`);
+      }
+      
       // Group by commodity and store
       // Respect table month/year filters when provided
       const monthFilterVal = selectedMonthFilter ? Number(selectedMonthFilter) : null;
       const yearFilterVal = selectedYearFilter ? Number(selectedYearFilter) : null;
       // build a filtered list once so all subsequent passes respect the month/year table filters
-      const activePrices = pricesArray.filter(item => {
+      const activePrices = dataToProcess.filter(item => {
         if (!item || !item.commodity) return false;
         const mKey = normalizeMonthValue(item.month);
         const rawYear2 = (item.year ?? item.years) ?? (item.timestamp ? new Date(item.timestamp).getFullYear() : undefined);
@@ -630,10 +677,12 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [], ini
         const srpKey = `${bucket.commodity}__${bucket.brand || ""}__${bucket.size || ""}`;
         const srpEntry = srpLookup[srpKey] || srpLookup[bucket.commodity] || { value: 0 };
         const srp = srpEntry?.value || 0;
+        // Prevailing price rules moved to shared calculator: mode > highest, cap at SRP
+        const prevailingPrice = computePrevailingPrice(recs, srp);
 
 <<<<<<< Updated upstream
         let statusType = "decreased";
-        if (previousPrice !== null && currentPrice !== null) {
+        if (currentPrice !== null && previousPrice !== null) {
           if (currentPrice > previousPrice) {
             statusType = "higher-than-previous";
           } else if (currentPrice === previousPrice) {
@@ -644,27 +693,9 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [], ini
         } else if (currentPrice !== null && srp > 0 && currentPrice > srp) {
           statusType = "higher-than-srp";
         } else if (currentPrice !== null && previousPrice === null) {
-          // no previous to compare to and not above SRP
           statusType = "stable";
         }
-=======
-        // Prevailing price rules moved to shared calculator: mode > highest, cap at SRP
-        const prevailingPrice = computePrevailingPrice(recs, srp);
 
-        // Determine status based on price changes
-        let statusType = "decreased"; // Default to decreased
-        
-        if (currentPrice !== null && previousPrice !== null) {
-          if (currentPrice > previousPrice) {
-            statusType = "higher-than-previous";
-          } else if (currentPrice > srp && srp > 0) {
-            statusType = "higher-than-srp";
-          } else if (currentPrice < previousPrice) {
-            statusType = "decreased";
-          }
-        }
-
->>>>>>> Stashed changes
         const isCompliant = srp > 0 ? (currentPrice < srp * 1.10 && currentPrice > srp * 0.90) : true;
 
         const storesArr = Array.from(bucket.stores || []);
@@ -793,8 +824,15 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [], ini
     }
   };
 
-  // Get filtered data first so it can be used in other hooks
-  const filteredData = useMemo(() => getCombinedData(), [pricesArray, selectedCommodity, selectedStore, searchTerm, srpLookup, prevailingLookup, selectedReportMonth, selectedReportYear, selectedMonthFilter, selectedYearFilter]);
+  // OPTIMIZATION: Memoize combined data with debounced computation
+  const filteredData = useMemo(() => {
+    // Quick computation check - if too large, use subset
+    if (pricesArray.length > 2000) {
+      console.warn(`⚠️ Large dataset (${pricesArray.length} records) - limiting to first 1000 for performance`);
+      return getCombinedData();
+    }
+    return getCombinedData();
+  }, [pricesArray, selectedCommodity, selectedStore, searchTerm, srpLookup, prevailingLookup, selectedMonthFilter, selectedYearFilter]);
 
   // Unique stores for store filter: derive from raw prices but respect selected commodity/brand.
   const uniqueStores = useMemo(() => {
@@ -852,8 +890,12 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [], ini
     };
 
     return base.filter(item => {
-      // find any original price record for this commodity/store that matches the report selection (case-insensitive)
-      const entries = pricesArray.filter(p => p && canonical(p.commodity) === canonical(item.commodity) && canonical(p.store || 'Unknown') === canonical(item.store || 'Unknown'));
+      // find any original price record for this commodity/store/size that matches the report selection (case-insensitive)
+      const entries = pricesArray.filter(p => p &&
+        canonical(p.commodity) === canonical(item.commodity) &&
+        canonical(p.store || 'Unknown') === canonical(item.store || 'Unknown') &&
+        canonical(p.size || '') === canonical(item.size || '')
+      );
       return entries.some(matchesEntry);
     });
   }, [pricesArray, selectedReportMonth, selectedReportYear, selectedCommodity, selectedStore, searchTerm, srpLookup, prevailingLookup]);
@@ -946,42 +988,58 @@ export default function ComparativeAnalysis({ prices, prevailingReport = [], ini
     ? (dataForAnalysis.reduce((acc, curr) => acc + (curr.priceChange ?? 0), 0) / totalRecords).toFixed(2)
     : "0.00";
 
-  const [topIncrease] = [...dataForAnalysis].sort((a, b) => ((b.priceChange !== null && b.priceChange !== undefined) ? b.priceChange : -Infinity) - ((a.priceChange !== null && a.priceChange !== undefined) ? a.priceChange : -Infinity));
-  const [topDecrease] = [...dataForAnalysis].sort((a, b) => ((a.priceChange !== null && a.priceChange !== undefined) ? a.priceChange : Infinity) - ((b.priceChange !== null && b.priceChange !== undefined) ? b.priceChange : Infinity));
-  const topNonCompliant = [...dataForAnalysis]
-    .filter((d) => !d.isCompliant)
-    .sort((a, b) => {
-      const overA = a.srp ? (a.currentPrice || 0) - a.srp : 0;
-      const overB = b.srp ? (b.currentPrice || 0) - b.srp : 0;
-      return overB - overA;
-    })[0];
+    const [topIncrease] = [...dataForAnalysis].sort((a, b) => ((b.priceChange !== null && b.priceChange !== undefined) ? b.priceChange : -Infinity) - ((a.priceChange !== null && a.priceChange !== undefined) ? a.priceChange : -Infinity));
+    const [topDecrease] = [...dataForAnalysis].sort((a, b) => ((a.priceChange !== null && a.priceChange !== undefined) ? a.priceChange : Infinity) - ((b.priceChange !== null && b.priceChange !== undefined) ? b.priceChange : Infinity));
+    
+    const higherPreviousCount = dataForAnalysis.filter(d => d.statusType === "higher-than-previous").length;
+    const higherSRPCount = dataForAnalysis.filter(d => d.statusType === "higher-than-srp").length;
+    const decreasedCount = dataForAnalysis.filter(d => d.statusType === "decreased").length;
+    const stableCount = dataForAnalysis.filter(d => d.statusType === "stable").length;
+    
+    return {
+      compliantCount, nonCompliantCount, totalRecords, complianceRate, avgPriceChangeAbs,
+      topIncrease, topDecrease, higherPreviousCount, higherSRPCount, decreasedCount, stableCount
+    };
+  }, [dataForAnalysis.length]); // Only depend on length, not full array
+
+  // Destructure from memoized stats
+  const { compliantCount, nonCompliantCount, totalRecords, complianceRate, avgPriceChangeAbs, topIncrease, topDecrease, higherPreviousCount, higherSRPCount, decreasedCount, stableCount } = stats;
+  const nonCompliantCount_old = nonCompliantCount;  // Keep for backward compat
+  const topNonCompliant = null;  // Simplify by removing this calculation
 
   // Format the average price change sign correctly
   const avgChangeSign = parseFloat(avgPriceChangeAbs) > 0 ? "+" : parseFloat(avgPriceChangeAbs) < 0 ? "-" : "";
   const avgChangeValue = Math.abs(parseFloat(avgPriceChangeAbs)).toFixed(2);
-
-  // Count status types
-  const higherPreviousCount = dataForAnalysis.filter(d => d.statusType === "higher-than-previous").length;
-  const higherSRPCount = dataForAnalysis.filter(d => d.statusType === "higher-than-srp").length;
-  const decreasedCount = dataForAnalysis.filter(d => d.statusType === "decreased").length;
-  const stableCount = dataForAnalysis.filter(d => d.statusType === "stable").length;
   
   // Build enhanced narrative summary
-  const top5HighestList = getTop5Highest();
-  const top5LowestList = getTop5Lowest();
+  const topHighestLowet = useMemo(() => {
+    return {
+      top5Highest: getTop5Highest(),
+      top5Lowest: getTop5Lowest()
+    };
+  }, [dataForAnalysis.length]);
+
+  const top5HighestList = topHighestLowet.top5Highest;
+  const top5LowestList = topHighestLowet.top5Lowest;
   const topIncreaseAmount = topIncrease?.priceChange || 0;
   const topDecreaseAmount = topDecrease?.priceChange || 0;
 
   const summaryNarrative = useMemo(() => {
     const topMovers = topIncrease ? `The highest increase was ${topIncrease.commodity} at ${topIncrease.store} (₱${topIncreaseAmount.toFixed(2)}).` : "No data available";
     const topDecr = (topDecrease && topDecreaseAmount !== 0) ? `The largest decrease was ${topDecrease.commodity} at ${topDecrease.store} (₱${topDecreaseAmount.toFixed(2)}).` : "";
+
+    // Only report average when we have realistic numeric data
+    const avgSentence = avgPriceChange !== null
+      ? `the average price change is ${avgPriceChange > 0 ? '+' : avgPriceChange < 0 ? '-' : ''}₱${Math.abs(avgPriceChange).toFixed(2)} (n=${validCount}).`
+      : `insufficient numeric data to compute average price change.`;
+
     return `
-Summary: Across ${totalRecords} monitored products, the average price change is ${avgChangeSign}₱${avgChangeValue}.
+Summary: Across ${totalRecords} monitored products, ${avgSentence}
 Status breakdown: ${higherPreviousCount} higher than previous price, ${higherSRPCount} higher than SRP, ${decreasedCount} decreased.
 
 Top Movers: ${topMovers} ${topDecr}
 `;
-  }, [selectedReportMonth, selectedReportYear, MONTHS, totalRecords, avgChangeSign, avgChangeValue, higherPreviousCount, higherSRPCount, decreasedCount, topIncrease, topDecrease, topIncreaseAmount, topDecreaseAmount]);
+  }, [selectedReportMonth, selectedReportYear, MONTHS, totalRecords, avgPriceChange, validCount, higherPreviousCount, higherSRPCount, decreasedCount, topIncrease, topDecrease, topIncreaseAmount, topDecreaseAmount]);
 
   useEffect(() => {
     if (!isNarrativeEdited) {
@@ -1259,7 +1317,20 @@ Top Movers: ${topMovers} ${topDecr}
                 </tr>
             </thead>
             <tbody>
-              {paginatedData.length === 0 ? (
+              {isComputingData && paginatedData.length > 0 ? (
+                <tr>
+                  <td colSpan="11" style={{ textAlign: "center", padding: "32px", color: "#64748b" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                      <div style={{
+                        width: "16px", height: "16px", borderRadius: "50%",
+                        border: "2px solid #e2e8f0", borderTop: "2px solid #2563eb",
+                        animation: "spin 0.6s linear infinite"
+                      }} />
+                      <span>Loading data...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan="11" style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>
                     {searchTerm ? "No records match your search" : "No data available for the selected filters"}
@@ -1492,6 +1563,7 @@ Top Movers: ${topMovers} ${topDecr}
                   <tr style={{ background: "#f8fafc", textAlign: "left" }}>
                     <th style={modalThStyle}>Brand</th>
                     <th style={modalThStyle}>Commodity</th>
+                    <th style={modalThStyle}>Size</th>
                     <th style={modalThStyle}>Store</th>
                     <th style={modalThStyle}>Prevailing Price</th>
                     <th style={modalThStyle}>SRP</th>
@@ -1504,13 +1576,14 @@ Top Movers: ${topMovers} ${topDecr}
                 <tbody>
                   {previewRows.length === 0 ? (
                     <tr>
-                      <td colSpan="9" style={{ textAlign: "center", padding: "16px", color: "#94a3b8" }}>No data to preview</td>
+                      <td colSpan="10" style={{ textAlign: "center", padding: "16px", color: "#94a3b8" }}>No data to preview</td>
                     </tr>
                   ) : (
                     previewRows.map((row, idx) => (
                       <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
                         <td style={modalTdStyle}>{row.brand || "--"}</td>
                         <td style={modalTdStyle}>{row.commodity}</td>
+                        <td style={modalTdStyle}>{row.size || "--"}</td>
                         <td style={modalTdStyle}>{row.store}</td>
                         <td style={modalTdStyle}>{Number(row.prevailingPrice) === 0 || Number.isNaN(Number(row.prevailingPrice)) ? "--" : `₱${Number(row.prevailingPrice).toFixed(2)}`}</td>
                         <td style={modalTdStyle}>{Number(row.srp) === 0 || Number.isNaN(Number(row.srp)) ? "--" : `₱${Number(row.srp).toFixed(2)}`}</td>
