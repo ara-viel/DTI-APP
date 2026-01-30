@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
-import { ShoppingCart, Package, ListChecks, TrendingUp, ArrowUp, ArrowDown, Filter, Calendar, Download } from "lucide-react";
+import { ShoppingCart, Package, ListChecks, TrendingUp, ArrowUp, ArrowDown, Filter, Calendar, Download, Loader } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -52,7 +52,8 @@ export default function Dashboard({ prices: pricesProp }) {
         setLoading(true);
         setError(null);
         
-        // Fetch from all four collections
+        // Fetch from all four collections without pagination params for all data
+        // The API will return the full array when no page/limit params are sent
         const [basicRes, primeRes, constructionRes, generalRes] = await Promise.all([
           fetch('http://localhost:5000/api/basic-necessities'),
           fetch('http://localhost:5000/api/prime-commodities'),
@@ -67,16 +68,23 @@ export default function Dashboard({ prices: pricesProp }) {
         
         // Combine all data
         const allData = [
-          ...(Array.isArray(basicData) ? basicData : []),
-          ...(Array.isArray(primeData) ? primeData : []),
-          ...(Array.isArray(constructionData) ? constructionData : []),
-          ...(Array.isArray(generalData) ? generalData : [])
+          ...(Array.isArray(basicData) ? basicData : (basicData.data || [])),
+          ...(Array.isArray(primeData) ? primeData : (primeData.data || [])),
+          ...(Array.isArray(constructionData) ? constructionData : (constructionData.data || [])),
+          ...(Array.isArray(generalData) ? generalData : (generalData.data || []))
         ];
         
-        console.log('Fetched prices from all collections:', { basicData, primeData, constructionData, generalData, allData });
+        console.log('✅ Fetched prices successfully:', { 
+          basicCount: (Array.isArray(basicData) ? basicData : basicData.data || []).length,
+          primeCount: (Array.isArray(primeData) ? primeData : primeData.data || []).length,
+          constructionCount: (Array.isArray(constructionData) ? constructionData : constructionData.data || []).length,
+          generalCount: (Array.isArray(generalData) ? generalData : generalData.data || []).length,
+          totalCount: allData.length
+        });
+        
         setPrices(allData);
       } catch (err) {
-        console.error('Error fetching prices:', err);
+        console.error('❌ Error fetching prices:', err);
         setError(err.message);
         // Fallback to prop data if available
         if (pricesProp) setPrices(Array.isArray(pricesProp) ? pricesProp : []);
@@ -929,9 +937,49 @@ export default function Dashboard({ prices: pricesProp }) {
 
   return (
     <div className="dashboard-wrapper">
-      {loading && <div style={{ textAlign: "center", padding: "40px", fontSize: "1.1rem", color: "#64748b" }}>Loading data...</div>}
-      {error && <div style={{ textAlign: "center", padding: "40px", fontSize: "1.1rem", color: "#ef4444" }}>Error: {error}</div>}
-      {!loading && prices.length === 0 && <div style={{ textAlign: "center", padding: "40px", fontSize: "1.1rem", color: "#94a3b8" }}>No data available. Please ensure the server is running.</div>}
+      {loading && (
+        <div style={{
+          textAlign: "center",
+          padding: "60px 40px",
+          fontSize: "1.1rem",
+          color: "#64748b",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "400px"
+        }}>
+          <Loader size={48} style={{ marginBottom: "20px", animation: "spin 1s linear infinite" }} />
+          <p style={{ marginBottom: "10px", fontWeight: "500" }}>Loading data from MongoDB...</p>
+          <p style={{ fontSize: "0.95rem", color: "#94a3b8" }}>This may take a moment depending on the amount of data</p>
+        </div>
+      )}
+      {error && (
+        <div style={{
+          textAlign: "center",
+          padding: "40px",
+          fontSize: "1.1rem",
+          color: "#ef4444",
+          backgroundColor: "#fee2e2",
+          borderRadius: "8px",
+          margin: "20px"
+        }}>
+          ❌ Error: {error}
+        </div>
+      )}
+      {!loading && prices.length === 0 && (
+        <div style={{
+          textAlign: "center",
+          padding: "40px",
+          fontSize: "1.1rem",
+          color: "#94a3b8",
+          backgroundColor: "#f8fafc",
+          borderRadius: "8px",
+          margin: "20px"
+        }}>
+          📊 No data available. Please ensure the server is running.
+        </div>
+      )}
       
       {!loading && prices.length > 0 && (
         <>
