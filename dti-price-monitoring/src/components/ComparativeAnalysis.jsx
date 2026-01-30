@@ -909,18 +909,24 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
         // Prevailing price rules: mode > highest, cap at SRP
         const prevailingPrice = computePrevailingPrice(recs, srp);
 
-        let statusType = "decreased";
-        if (currentPrice !== null && previousPrice !== null) {
+        let statusType = "stable";
+        if (currentPrice !== null && srp > 0) {
+          // FIRST PRIORITY: Check if price is higher than SRP
+          if (currentPrice > srp) {
+            statusType = "higher-than-srp";
+          } else {
+            // Price is within or below SRP, mark as stable
+            statusType = "stable";
+          }
+        } else if (currentPrice !== null && previousPrice !== null) {
+          // If no SRP data, check against previous price
           if (currentPrice > previousPrice) {
             statusType = "higher-than-previous";
-          } else if (currentPrice === previousPrice) {
-            statusType = "stable";
           } else {
-            statusType = "decreased";
+            statusType = "stable";
           }
-        } else if (currentPrice !== null && srp > 0 && currentPrice > srp) {
-          statusType = "higher-than-srp";
-        } else if (currentPrice !== null && previousPrice === null) {
+        } else if (currentPrice !== null) {
+          // Default to stable if only current price is available
           statusType = "stable";
         }
 

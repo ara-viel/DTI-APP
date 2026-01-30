@@ -505,7 +505,11 @@ export default function Monitoring({ prices = [], onSeeAnalysis = () => {}, hide
         });
       }
     });
-    return Object.values(storeExceeded).sort((a, b) => b.count - a.count);
+    const result = Object.values(storeExceeded);
+    result.forEach(store => {
+      store.items.sort((a, b) => b.excess - a.excess);
+    });
+    return result.sort((a, b) => b.count - a.count);
   }, [timeFilteredPrices, hideStores]);
 
   // 4. Stores that exceeded 10% previous price
@@ -565,7 +569,11 @@ export default function Monitoring({ prices = [], onSeeAnalysis = () => {}, hide
       }
     });
 
-    return Object.values(storeExceeded).sort((a, b) => b.count - a.count);
+    const result = Object.values(storeExceeded);
+    result.forEach(store => {
+      store.items.sort((a, b) => b.percentIncrease - a.percentIncrease);
+    });
+    return result.sort((a, b) => b.count - a.count);
   }, [timeFilteredPrices, hideStores]);
 
   const srpPreviewLimit = 3;
@@ -722,7 +730,7 @@ export default function Monitoring({ prices = [], onSeeAnalysis = () => {}, hide
         ) : (
           <>
             {priceTrendData.sizeLabels.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", marginBottom: "16px", paddingBottom: "12px", borderBottom: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", marginBottom: "16px", paddingBottom: "12px", borderBottom: "1px solid #e2e8f0", justifyContent: "center" }}>
                 {priceTrendData.sizeLabels.map((label, idx) => (
                   <div
                     key={label}
