@@ -6,8 +6,9 @@ import jsPDF from "jspdf";
 import "../assets/Dashboard.css";
 
 export default function Dashboard({ prices: pricesProp }) {
-  const [prices, setPrices] = useState([]);
+  const [prices, setPrices] = useState(() => Array.isArray(pricesProp) ? pricesProp : []);
   const [loading, setLoading] = useState(true);
+  const [chartsReady, setChartsReady] = useState(false);
   const [error, setError] = useState(null);
   const [selectedCommodity, setSelectedCommodity] = useState("all");
   const [selectedStore, setSelectedStore] = useState("all");
@@ -45,54 +46,20 @@ export default function Dashboard({ prices: pricesProp }) {
     return null;
   };
   
-  // Fetch prices from server on component mount
+  // Use prop data directly - no fetching needed
   useEffect(() => {
-    const fetchPrices = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Fetch from all four collections without pagination params for all data
-        // The API will return the full array when no page/limit params are sent
-        const [basicRes, primeRes, constructionRes, generalRes] = await Promise.all([
-          fetch('http://localhost:5000/api/basic-necessities'),
-          fetch('http://localhost:5000/api/prime-commodities'),
-          fetch('http://localhost:5000/api/construction-materials'),
-          fetch('http://localhost:5000/api/prices')
-        ]);
-        
-        const basicData = basicRes.ok ? await basicRes.json() : [];
-        const primeData = primeRes.ok ? await primeRes.json() : [];
-        const constructionData = constructionRes.ok ? await constructionRes.json() : [];
-        const generalData = generalRes.ok ? await generalRes.json() : [];
-        
-        // Combine all data
-        const allData = [
-          ...(Array.isArray(basicData) ? basicData : (basicData.data || [])),
-          ...(Array.isArray(primeData) ? primeData : (primeData.data || [])),
-          ...(Array.isArray(constructionData) ? constructionData : (constructionData.data || [])),
-          ...(Array.isArray(generalData) ? generalData : (generalData.data || []))
-        ];
-        
-        console.log('✅ Fetched prices successfully:', { 
-          basicCount: (Array.isArray(basicData) ? basicData : basicData.data || []).length,
-          primeCount: (Array.isArray(primeData) ? primeData : primeData.data || []).length,
-          constructionCount: (Array.isArray(constructionData) ? constructionData : constructionData.data || []).length,
-          generalCount: (Array.isArray(generalData) ? generalData : generalData.data || []).length,
-          totalCount: allData.length
-        });
-        
-        setPrices(allData);
-      } catch (err) {
-        console.error('❌ Error fetching prices:', err);
-        setError(err.message);
-        // Fallback to prop data if available
-        if (pricesProp) setPrices(Array.isArray(pricesProp) ? pricesProp : []);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchPrices();
+    if (pricesProp && Array.isArray(pricesProp)) {
+      setLoading(true);
+      setChartsReady(false);
+      setPrices(pricesProp);
+      // Show loading for 300ms then data, then after another 500ms show charts
+      const timer1 = setTimeout(() => setLoading(false), 300);
+      const timer2 = setTimeout(() => setChartsReady(true), 800);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }
   }, [pricesProp]);
   
   const pieColors = ["#22c55e", "#f97316"];
@@ -1149,6 +1116,24 @@ export default function Dashboard({ prices: pricesProp }) {
         </div>
         <div className="filter-tag">Filtered: {filterLabel}</div>
 
+        {!chartsReady && (
+          <div style={{
+            textAlign: "center",
+            padding: "60px 40px",
+            fontSize: "0.95rem",
+            color: "#64748b",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "400px"
+          }}>
+            <Loader size={32} style={{ marginBottom: "16px", animation: "spin 1s linear infinite" }} />
+            <p style={{ fontWeight: "500" }}>Preparing charts...</p>
+          </div>
+        )}
+
+        {chartsReady && <>
         <div className="chart-container" style={{ marginTop: "24px" }}>
           <div className="chart-header">
             <div className="chart-title">Prevailing Price Trend Over Time</div>
@@ -1191,8 +1176,8 @@ export default function Dashboard({ prices: pricesProp }) {
         {/* TOP MOVERS: Highest Increases and Largest Decreases */}
         <div className="chart-container" style={{ marginTop: "24px" }}>
           <div className="chart-header">
-            <div className="chart-title"></div>
-              <div style={{ display: "flex", gap: 8 }}>
+            <div className="chart-title">Top Movers Analysis</div>
+            <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => downloadChart(highestChartRef, "TopIncreases")} className="chart-download-button" title="Download increases chart">
                 <Download size={14} />
               </button>
@@ -1272,6 +1257,7 @@ export default function Dashboard({ prices: pricesProp }) {
             </div>
           </div>
         </div>
+        </>}
       </div>
         </>
       )}

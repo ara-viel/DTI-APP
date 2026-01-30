@@ -329,40 +329,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
       if (typeof normalized === 'number') months.add(normalized);
     });
     return Array.from(months).sort((a, b) => a - b);
-  }, [pricesArray.length, selectedStore]); // OPTIMIZATION: Use length instead of full array
-
-  // OPTIMIZATION: Trigger computation asynchronously when filters change
-  useEffect(() => {
-    if (pricesArray.length === 0) {
-      setIsComputingData(false);
-      return;
-    }
-
-    setIsComputingData(true);
-    
-    // Use requestIdleCallback to compute after user interactions are complete
-    if (window.requestIdleCallback) {
-      computationRef.current = requestIdleCallback(() => {
-        // Trigger the memoized computation by just setting a dummy state
-        setIsComputingData(false);
-      }, { timeout: 100 });
-    } else {
-      // Fallback for browsers without requestIdleCallback
-      computationRef.current = setTimeout(() => {
-        setIsComputingData(false);
-      }, 50);
-    }
-
-    return () => {
-      if (computationRef.current) {
-        if (window.cancelIdleCallback) {
-          window.cancelIdleCallback(computationRef.current);
-        } else {
-          clearTimeout(computationRef.current);
-        }
-      }
-    };
-  }, [pricesArray.length, selectedCommodity, selectedStore, selectedBrand]);
+  }, [pricesArray]);
 
   const availableYears = useMemo(() => {
     const years = new Set();
@@ -374,7 +341,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
       }
     });
     return Array.from(years).sort((a, b) => b - a);
-  }, [pricesArray.length, selectedStore, selectedCommodity]); // OPTIMIZATION: Use length instead of full array
+  }, [pricesArray]);
 
   // Get unique commodities and stores for filters (dedupe case-insensitively)
   const uniqueCommodities = useMemo(() => {
@@ -472,16 +439,245 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
   });
 
 
-  // OPTIMIZATION: Lazy loading state for deferred computation
-  const [isComputingData, setIsComputingData] = useState(false);
-  const computationRef = useRef(null);
-  const [dataProcessingComplete, setDataProcessingComplete] = useState(false);
-
-  // Get combined data, filtered by selected month/year if set
-  const getCombinedData = () => {
+  // OPTIMIZATION: Compute base aggregated data once on mount (without filters)
+  // This data is used for report generation and won't be recomputed on filter changes
+  const baseAggregatedData = useMemo(() => {
     try {
-      // Group by commodity and store
-      // Respect table month/year filters when provided
+      // Group by commodity and store - NO FILTERS APPLIED HERE
+      const activePrices = pricesArray;
+
+      const grouped = {};
+      activePrices.forEach(item => {
+        if (!item || !item.commodity) return;
+        let itemBrand = "";
+        try {
+          if (item.brand) {
+            if (Array.isArray(item.brand)) itemBrand = String(item.brand[0] || "");
+            else itemBrand = String(item.brand);
+          } else if (item.brands) {
+            if (Array.isArray(item.brands)) itemBrand = String(item.brands[0] || "");
+            else itemBrand = String(item.brands);
+          }
+        } catch (e) { itemBrand = ""; }
+
+        const itemMonthKey = normalizeMonthValue(item.month);
+        const rawYear = (item.year ?? item.years) ?? (item.timestamp ? new Date(item.timestamp).getFullYear() : undefined);
+        const itemYearKey = normalizeYearValue(rawYear);
+
+        const monthKey = itemMonthKey;
+        const yearKey = itemYearKey;
+
+        const key = `${item.commodity}_${itemBrand || "UnknownBrand"}_${item.size || ""}_${item.store || "Unknown"}_${monthKey}_${yearKey}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            commodity: item.commodity,
+            brand: itemBrand || "",
+            store: item.store || "Unknown",
+            size: item.size || "",
+            prices: [],
+            brands: new Set()
+          };
+        }
+        const parsedPrice = (item.price === undefined || item.price === null || String(item.price).trim() === "") ? null : Number(item.price);
+        const parsedSrp = (item.srp === undefined || item.srp === null || String(item.srp).trim() === "") ? null : Number(item.srp);
+        grouped[key].prices.push({
+          price: parsedPrice,
+          srp: parsedSrp,
+          month: item.month,
+          year: item.year ?? item.years ?? "",
+          monthKey: monthKey,
+          yearKey: yearKey,
+          ts: item.timestamp ? new Date(item.timestamp).getTime() : 0,
+          originalTimestamp: item.timestamp
+        });
+        try {
+          if (itemBrand) grouped[key].brands.add(itemBrand);
+          else if (item.brand) {
+            if (Array.isArray(item.brand)) item.brand.forEach(b => b && grouped[key].brands.add(String(b)));
+            else grouped[key].brands.add(String(item.brand));
+          } else if (item.brands) {
+            if (Array.isArray(item.brands)) item.brands.forEach(b => b && grouped[key].brands.add(String(b)));
+            else grouped[key].brands.add(String(item.brands));
+          }
+        } catch (e) { }
+      });
+
+      // Build prevailing map across stores per commodity+brand+size+month+year using mode
+      const prevailingBuckets = {};
+      activePrices.forEach(item => {
+        if (!item || !item.commodity) return;
+        let itemBrand = "";
+        try {
+          if (item.brand) {
+            if (Array.isArray(item.brand)) itemBrand = String(item.brand[0] || "");
+            else itemBrand = String(item.brand);
+          } else if (item.brands) {
+            if (Array.isArray(item.brands)) itemBrand = String(item.brands[0] || "");
+            else itemBrand = String(item.brands);
+          }
+        } catch (e) { itemBrand = ""; }
+
+        const m = normalizeMonthValue(item.month);
+        const yRaw = (item.year ?? item.years) ?? (item.timestamp ? new Date(item.timestamp).getFullYear() : undefined);
+        const y = normalizeYearValue(yRaw);
+
+        const monthKey = m;
+        const yearKey = y;
+
+        const key = `${item.commodity}__${item.size || ""}__${monthKey}__${yearKey}`;
+        if (!prevailingBuckets[key]) prevailingBuckets[key] = [];
+        const pVal = (item.price === undefined || item.price === null || String(item.price).trim() === "") ? null : Number(item.price);
+        if (pVal !== null) prevailingBuckets[key].push({ price: pVal, ts: item.timestamp ? new Date(item.timestamp).getTime() : 0 });
+      });
+
+      const prevailingMap = {};
+      Object.entries(prevailingBuckets).forEach(([k, arr]) => {
+        const freq = {};
+        const lastTs = {};
+        arr.forEach(v => {
+          const p = v.price;
+          freq[p] = (freq[p] || 0) + 1;
+          lastTs[p] = Math.max(lastTs[p] || 0, v.ts || 0);
+        });
+
+        const counts = Object.values(freq);
+        const maxCount = counts.length ? Math.max(...counts) : 0;
+
+        if (maxCount > 1) {
+          let bestPrice = -Infinity;
+          let bestTs = -1;
+          Object.keys(freq).forEach(pKey => {
+            const count = freq[pKey];
+            if (count === maxCount) {
+              const ts = lastTs[pKey] || 0;
+              const pNum = Number(pKey);
+              if (pNum > bestPrice || (pNum === bestPrice && ts > bestTs)) {
+                bestPrice = pNum;
+                bestTs = ts;
+              }
+            }
+          });
+          prevailingMap[k] = bestPrice === -Infinity ? 0 : bestPrice;
+        } else {
+          const parts = k.split('__');
+          const commodityKey = parts[0];
+          const sizeKey = parts[1];
+          const monthKey = parts[2];
+          const yearKey = parts[3];
+
+          let bestPrice = -Infinity;
+          let bestTs = -1;
+          Object.entries(prevailingBuckets).forEach(([k2, arr2]) => {
+            const p2 = k2.split('__');
+            if (p2[0] === commodityKey && p2[1] === sizeKey && p2[2] === monthKey && p2[3] === yearKey) {
+              arr2.forEach(v => {
+                if (v.price > bestPrice || (v.price === bestPrice && (v.ts || 0) > bestTs)) {
+                  bestPrice = v.price;
+                  bestTs = v.ts || 0;
+                }
+              });
+            }
+          });
+          prevailingMap[k] = bestPrice === -Infinity ? 0 : bestPrice;
+        }
+      });
+
+      // Produce one aggregated row per commodity+brand+size
+      const aggregatedBuckets = {};
+      const itemBrandFromRaw = (it) => {
+        try {
+          if (!it) return "";
+          if (it.brand) return Array.isArray(it.brand) ? String(it.brand[0] || "") : String(it.brand);
+          if (it.brands) return Array.isArray(it.brands) ? String(it.brands[0] || "") : String(it.brands);
+        } catch (e) { }
+        return "";
+      };
+
+      activePrices.forEach(item => {
+        if (!item || !item.commodity) return;
+        const itemBrand = itemBrandFromRaw(item) || "";
+        const sizeKey = item.size || "";
+        const storeKey = item.store || "Unknown";
+        const key = `${item.commodity}__${itemBrand}__${sizeKey}__${storeKey}`;
+        if (!aggregatedBuckets[key]) aggregatedBuckets[key] = { commodity: item.commodity, brand: itemBrand, size: sizeKey, records: [], stores: new Set() };
+        const mKey = normalizeMonthValue(item.month);
+        const yKey = normalizeYearValue((item.year ?? item.years) ?? (item.timestamp ? new Date(item.timestamp).getFullYear() : undefined));
+        const recPrice = (item.price === undefined || item.price === null || String(item.price).trim() === "") ? null : Number(item.price);
+        const recSrp = (item.srp === undefined || item.srp === null || String(item.srp).trim() === "") ? null : Number(item.srp);
+        aggregatedBuckets[key].records.push({ raw: item, price: recPrice, srp: recSrp, ts: item.timestamp ? new Date(item.timestamp).getTime() : 0, monthKey: mKey, yearKey: yKey, store: storeKey });
+        aggregatedBuckets[key].stores.add(storeKey);
+      });
+
+      const results = [];
+      Object.values(aggregatedBuckets).forEach(bucket => {
+        const recs = bucket.records.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        const currentRec = recs.length ? recs[0] : null;
+        const previousRec = recs.length > 1 ? recs[1] : null;
+        const currentPrice = currentRec ? currentRec.price : null;
+        const previousPrice = previousRec ? previousRec.price : null;
+        const priceChange = (currentPrice !== null && previousPrice !== null) ? (currentPrice - previousPrice) : null;
+        const percentChange = (previousPrice !== null && previousPrice !== 0 && priceChange !== null) ? ((priceChange / previousPrice) * 100) : null;
+
+        const srpKey = `${bucket.commodity}__${bucket.brand || ""}__${bucket.size || ""}`;
+        const srpEntry = srpLookup[srpKey] || srpLookup[bucket.commodity] || { value: 0 };
+        const srp = srpEntry?.value || 0;
+        
+        const prevailingPrice = computePrevailingPrice(recs, srp);
+
+        let statusType = "decreased";
+        if (currentPrice !== null && previousPrice !== null) {
+          if (currentPrice > previousPrice) {
+            statusType = "higher-than-previous";
+          } else if (currentPrice === previousPrice) {
+            statusType = "stable";
+          } else {
+            statusType = "decreased";
+          }
+        } else if (currentPrice !== null && srp > 0 && currentPrice > srp) {
+          statusType = "higher-than-srp";
+        } else if (currentPrice !== null && previousPrice === null) {
+          statusType = "stable";
+        }
+
+        const isCompliant = srp > 0 ? (currentPrice < srp * 1.10 && currentPrice > srp * 0.90) : true;
+
+        const storesArr = Array.from(bucket.stores || []);
+        const storeDisplay = storesArr.length === 0 ? "Unknown" : storesArr.join(', ');
+
+        results.push({
+          commodity: bucket.commodity,
+          brand: bucket.brand || "",
+          store: storeDisplay,
+          _stores: storesArr,
+          size: bucket.size || "",
+          prevailingPrice: prevailingPrice,
+          srp: srp,
+          currentPrice: currentPrice,
+          previousPrice: previousPrice,
+          priceChange: priceChange,
+          percentChange: percentChange,
+          isCompliant: isCompliant,
+          statusType: statusType,
+          month: currentRec && currentRec.monthKey !== "ALL" ? currentRec.monthKey : "",
+          year: currentRec && currentRec.yearKey !== "ALL" ? currentRec.yearKey : ""
+        });
+      });
+
+      return results;
+    } catch (error) {
+      console.error("Error in baseAggregatedData:", error);
+      return [];
+    }
+  }, [pricesArray, srpLookup, prevailingLookup]);
+
+  // Apply filters to base data for table display
+  const combinedData = useMemo(() => {
+    // Only process data when filters are applied
+    if (selectedCommodity === 'all' && selectedBrand === 'all' && !searchTerm) {
+      return [];
+    }
+
+    try {
       const monthFilterVal = selectedMonthFilter ? Number(selectedMonthFilter) : null;
       const yearFilterVal = selectedYearFilter ? Number(selectedYearFilter) : null;
       
@@ -709,8 +905,8 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
         const srpKey = `${bucket.commodity}__${bucket.brand || ""}__${bucket.size || ""}`;
         const srpEntry = srpLookup[srpKey] || srpLookup[bucket.commodity] || { value: 0 };
         const srp = srpEntry?.value || 0;
-        // Prevailing price rules: determine modal price (mode) then fallback to highest when needed,
-        // with a ceiling at SRP. Calculation delegated to shared `computePrevailingPrice` helper.
+        
+        // Prevailing price rules: mode > highest, cap at SRP
         const prevailingPrice = computePrevailingPrice(recs, srp);
 
         let statusType = "decreased";
@@ -859,17 +1055,53 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
       console.error("Error in getCombinedData:", error);
       return [];
     }
-  };
+  }, [pricesArray, srpLookup, prevailingLookup, selectedMonthFilter, selectedYearFilter, selectedCommodity, selectedBrand, searchTerm]);
 
-  // OPTIMIZATION: Memoize combined data with debounced computation
+  // OPTIMIZATION: Apply filters to pre-computed data (like Data Management)
   const filteredData = useMemo(() => {
-    // Quick computation check - if too large, use subset
-    if (pricesArray.length > 2000) {
-      console.warn(`⚠️ Large dataset (${pricesArray.length} records) - limiting to first 1000 for performance`);
-      return getCombinedData();
-    }
-    return getCombinedData();
-  }, [pricesArray, selectedCommodity, selectedStore, selectedBrand, srpLookup, prevailingLookup, selectedMonthFilter, selectedYearFilter, selectedStatusFilter]);
+    return combinedData.filter(item => {
+      // Commodity filter
+      if (selectedCommodity && selectedCommodity !== 'all') {
+        if (!canonical(item.commodity).toLowerCase().includes(canonical(selectedCommodity).toLowerCase())) {
+          return false;
+        }
+      }
+      
+      // Store filter
+      if (selectedStore && selectedStore !== 'all') {
+        if (canonical(item.store || '').toLowerCase() !== canonical(selectedStore).toLowerCase()) {
+          return false;
+        }
+      }
+      
+      // Brand filter
+      if (selectedBrand && selectedBrand !== 'all') {
+        if (canonical(item.brand || '').toLowerCase() !== canonical(selectedBrand).toLowerCase()) {
+          return false;
+        }
+      }
+      
+      // Status filter
+      if (selectedStatusFilter && selectedStatusFilter !== 'all') {
+        if (item.statusType !== selectedStatusFilter) {
+          return false;
+        }
+      }
+      
+      // Search term filter
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        const matchesSearch = (
+          canonical(item.commodity).toLowerCase().includes(search) ||
+          canonical(item.store || '').toLowerCase().includes(search) ||
+          canonical(item.brand || '').toLowerCase().includes(search)
+        );
+        if (!matchesSearch) return false;
+      }
+      
+      return true;
+    });
+  }, [combinedData, selectedCommodity, selectedStore, selectedBrand, selectedStatusFilter, searchTerm]);
 
   // Unique stores for store filter: derive from raw prices but respect selected commodity/brand.
   const uniqueStores = useMemo(() => {
@@ -900,7 +1132,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
 
   // Report-specific data: filter combined results to only entries that match the selected report month/year
   const reportData = useMemo(() => {
-    const base = getCombinedData();
+    const base = combinedData;
     if (!selectedReportMonth && !selectedReportYear) return base;
 
     const matchesEntry = (p) => {
@@ -937,22 +1169,27 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
     });
   }, [pricesArray, selectedReportMonth, selectedReportYear, selectedCommodity, selectedStore, searchTerm, srpLookup, prevailingLookup]);
 
-  // Count unique commodities and stores in filteredData
+  // Check if any filters are active
+  const isFiltered = selectedCommodity !== 'all' || selectedBrand !== 'all' || searchTerm || selectedStore !== 'all' || selectedStatusFilter;
+
+  // Count unique commodities and stores - use filtered data if filters are active
+  const commodityStoreSource = isFiltered && filteredData.length > 0 ? filteredData : baseAggregatedData;
+  
   const filteredCommodityCount = useMemo(() => {
     const set = new Set();
-    filteredData.forEach(item => {
+    commodityStoreSource.forEach(item => {
       if (item.commodity) set.add(item.commodity.trim().toLowerCase());
     });
     return set.size;
-  }, [filteredData]);
+  }, [commodityStoreSource]);
 
   const filteredStoreCount = useMemo(() => {
     const set = new Set();
-    filteredData.forEach(item => {
+    commodityStoreSource.forEach(item => {
       if (item.store) set.add(item.store.trim().toLowerCase());
     });
     return set.size;
-  }, [filteredData]);
+  }, [commodityStoreSource]);
 
   // (moved above)
 
@@ -996,8 +1233,8 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
     return storesWithAvgSRP;
   };
 
-  // Use reportData when month/year is selected, otherwise use filteredData for analysis
-  const dataForAnalysis = (selectedReportMonth || selectedReportYear) ? reportData : filteredData;
+  // Use reportData when month/year is selected, otherwise use isFiltered to decide between filteredData and baseAggregatedData
+  const dataForAnalysis = (selectedReportMonth || selectedReportYear) ? reportData : (isFiltered ? filteredData : baseAggregatedData);
 
   // Pagination logic
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -1012,49 +1249,55 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
     return filteredData.slice(startIdx, startIdx + itemsPerPage);
   }, [filteredData, currentPage]);
 
-  // Determine the source used for exports: when a month/year is selected use reportData, otherwise prefer filteredData then paginatedData
-  const reportSource = (selectedReportMonth || selectedReportYear) ? reportData : (filteredData.length > 0 ? filteredData : paginatedData);
+  // Determine the source used for exports and report preview
+  const reportDataSource = isFiltered ? filteredData : baseAggregatedData;
 
-  // Calculate summary statistics (use dataForAnalysis so it follows selected month/year)
-  // Memoized and guarded for empty datasets to avoid runtime errors.
+  // Determine the source used for exports: when a month/year is selected use reportData, otherwise use reportDataSource
+  const reportSource = (selectedReportMonth || selectedReportYear) ? reportData : reportDataSource;
+
+  // Use filteredData if filters are active, otherwise use baseAggregatedData for fast initial load
+  const statsSource = isFiltered && filteredData.length > 0 ? filteredData : baseAggregatedData;
+  
   const stats = useMemo(() => {
-    if (!dataForAnalysis || dataForAnalysis.length === 0) {
+    const analysisData = statsSource;
+    
+    if (analysisData.length === 0) {
       return {
-        compliantCount: 0,
-        nonCompliantCount: 0,
-        totalRecords: 0,
-        complianceRate: 0,
-        avgPriceChangeAbs: "0.00",
-        topIncrease: null,
-        topDecrease: null,
-        higherPreviousCount: 0,
-        higherSRPCount: 0,
-        decreasedCount: 0,
-        stableCount: 0
+        compliantCount: 0, nonCompliantCount: 0, totalRecords: 0, complianceRate: 0,
+        avgPriceChangeAbs: "0.00", topIncrease: null, topDecrease: null,
+        higherPreviousCount: 0, higherSRPCount: 0, decreasedCount: 0, stableCount: 0
       };
     }
-
-    const compliantCount = dataForAnalysis.filter(d => d.isCompliant).length;
-    const nonCompliantCount = dataForAnalysis.filter(d => !d.isCompliant).length;
-    const totalRecords = dataForAnalysis.length;
+    
+    const compliantCount = analysisData.filter(d => d.isCompliant).length;
+    const nonCompliantCount = analysisData.filter(d => !d.isCompliant).length;
+    const totalRecords = analysisData.length;
     const complianceRate = totalRecords > 0 ? ((compliantCount / totalRecords) * 100).toFixed(1) : 0;
     const avgPriceChangeAbs = totalRecords > 0
-      ? (dataForAnalysis.reduce((acc, curr) => acc + (curr.priceChange ?? 0), 0) / totalRecords).toFixed(2)
+      ? (analysisData.reduce((acc, curr) => acc + (curr.priceChange ?? 0), 0) / totalRecords).toFixed(2)
       : "0.00";
 
-    const [topIncrease] = [...dataForAnalysis].sort((a, b) => ((b.priceChange !== null && b.priceChange !== undefined) ? b.priceChange : -Infinity) - ((a.priceChange !== null && a.priceChange !== undefined) ? a.priceChange : -Infinity));
-    const [topDecrease] = [...dataForAnalysis].sort((a, b) => ((a.priceChange !== null && a.priceChange !== undefined) ? a.priceChange : Infinity) - ((b.priceChange !== null && b.priceChange !== undefined) ? b.priceChange : Infinity));
-
-    const higherPreviousCount = dataForAnalysis.filter(d => d.statusType === "higher-than-previous").length;
-    const higherSRPCount = dataForAnalysis.filter(d => d.statusType === "higher-than-srp").length;
-    const decreasedCount = dataForAnalysis.filter(d => d.statusType === "decreased").length;
-    const stableCount = dataForAnalysis.filter(d => d.statusType === "stable").length;
-
+    // Get top increase/decrease only if there are actual price changes
+    const itemsWithIncrease = analysisData.filter(d => d.priceChange !== null && d.priceChange !== undefined && d.priceChange > 0);
+    const itemsWithDecrease = analysisData.filter(d => d.priceChange !== null && d.priceChange !== undefined && d.priceChange < 0);
+    
+    const topIncrease = itemsWithIncrease.length > 0 
+      ? itemsWithIncrease.sort((a, b) => b.priceChange - a.priceChange)[0]
+      : null;
+    const topDecrease = itemsWithDecrease.length > 0
+      ? itemsWithDecrease.sort((a, b) => a.priceChange - b.priceChange)[0]
+      : null;
+    
+    const higherPreviousCount = analysisData.filter(d => d.statusType === "higher-than-previous").length;
+    const higherSRPCount = analysisData.filter(d => d.statusType === "higher-than-srp").length;
+    const decreasedCount = analysisData.filter(d => d.statusType === "decreased").length;
+    const stableCount = analysisData.filter(d => d.statusType === "stable").length;
+    
     return {
       compliantCount, nonCompliantCount, totalRecords, complianceRate, avgPriceChangeAbs,
       topIncrease, topDecrease, higherPreviousCount, higherSRPCount, decreasedCount, stableCount
     };
-  }, [dataForAnalysis.length]); // Only depend on length, not full array
+  }, [statsSource]);
 
   // Destructure from memoized stats
   const { compliantCount, nonCompliantCount, totalRecords, complianceRate, avgPriceChangeAbs, topIncrease, topDecrease, higherPreviousCount, higherSRPCount, decreasedCount, stableCount } = stats;
@@ -1079,14 +1322,20 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
   const topDecreaseAmount = topDecrease?.priceChange || 0;
 
   const summaryNarrative = useMemo(() => {
-    const topMovers = topIncrease ? `The highest increase was ${topIncrease.commodity} at ${topIncrease.store} (₱${topIncreaseAmount.toFixed(2)}).` : "No data available";
-    const topDecr = (topDecrease && topDecreaseAmount !== 0) ? `The largest decrease was ${topDecrease.commodity} at ${topDecrease.store} (₱${topDecreaseAmount.toFixed(2)}).` : "";
+    const topMovers = topIncrease && topIncreaseAmount > 0 
+      ? `The highest increase was ${topIncrease.commodity} at ${topIncrease.store} (₱${topIncreaseAmount.toFixed(2)}).` 
+      : "";
+    const topDecr = topDecrease && topDecreaseAmount < 0 
+      ? `The largest decrease was ${topDecrease.commodity} at ${topDecrease.store} (₱${Math.abs(topDecreaseAmount).toFixed(2)}).` 
+      : "";
+    
+    const topMoversSection = (topMovers || topDecr) 
+      ? `\n\nTop Movers: ${topMovers} ${topDecr}`.trim()
+      : "";
 
     return `
 Summary: Across ${totalRecords} monitored products, the average price change is ${avgChangeSign}₱${avgChangeValue}.
-Status breakdown: ${higherPreviousCount} higher than previous price, ${higherSRPCount} higher than SRP, ${decreasedCount} decreased.
-
-Top Movers: ${topMovers} ${topDecr}
+Status breakdown: ${higherPreviousCount} higher than previous price, ${higherSRPCount} higher than SRP, ${decreasedCount} decreased.${topMoversSection}
 `;
   }, [totalRecords, avgChangeSign, avgChangeValue, higherPreviousCount, higherSRPCount, decreasedCount, topIncrease, topDecrease, topIncreaseAmount, topDecreaseAmount]);
 
@@ -1154,7 +1403,7 @@ Top Movers: ${topMovers} ${topDecr}
   // Download as Word (docx) with PDF-like format
   // Word generation moved to src/services/reportGenerator.js
 
-  const previewRows = (selectedReportMonth || selectedReportYear) ? reportData.slice(0, 5) : paginatedData.slice(0, 5);
+  const previewRows = (selectedReportMonth || selectedReportYear) ? reportData.slice(0, 5) : reportDataSource.slice(0, 5);
 
   // Get status label and color
   const getStatusLabel = (statusType) => {
@@ -1206,7 +1455,6 @@ Top Movers: ${topMovers} ${topDecr}
                 setReportNarrative(summaryNarrative);
                 setShowReportModal(true);
               }}
-              disabled={paginatedData.length === 0}
             >
               <Download size={16} />
               Generate Report
@@ -1322,20 +1570,7 @@ Top Movers: ${topMovers} ${topDecr}
                 </tr>
             </thead>
             <tbody>
-              {isComputingData && paginatedData.length > 0 ? (
-                <tr>
-                  <td colSpan="11" style={{ textAlign: "center", padding: "32px", color: "#64748b" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-                      <div style={{
-                        width: "16px", height: "16px", borderRadius: "50%",
-                        border: "2px solid #e2e8f0", borderTop: "2px solid #2563eb",
-                        animation: "spin 0.6s linear infinite"
-                      }} />
-                      <span>Loading data...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : paginatedData.length === 0 ? (
+              {paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan="11" style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>
                     {searchTerm ? "No records match your search" : "No data available for the selected filters"}
