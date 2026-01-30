@@ -1,3 +1,9 @@
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { TrendingUp, TrendingDown, Search, X, ChevronLeft, ChevronRight, Download, Loader } from "lucide-react";
+import { generatePDF, generateWord } from "../services/reportGenerator";
+import { computePrevailingPrice } from "../services/prevailingCalculator";
+import "../assets/ComparativeAnalysis.css";
+
 const exportButtonStyle = {
   background: "#2563eb",
   color: "#fff",
@@ -90,13 +96,70 @@ const modalTdStyle = {
   fontSize: "0.97rem"
 };
 
+// OPTIMIZATION: Separate memoized search input component to prevent re-renders of main component
+const SearchInput = React.memo(({ searchTerm, onSearchChange, showSuggestions, setShowSuggestions, uniqueCommodities, canonical, onSelectCommodity }) => {
+  return (
+    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, minWidth: 360, marginRight: 8 }}>
+      <Search size={18} color="#64748b" style={{ position: 'absolute', left: 10 }} />
+      <input
+        type="text"
+        className="ca-search-input"
+        placeholder="Enter commodity"
+        value={searchTerm}
+        onFocus={() => setShowSuggestions(true)}
+        onChange={onSearchChange}
+        onBlur={e => {
+          const v = e.target.value;
+          const match = uniqueCommodities.find(c => canonical(c).toLowerCase() === canonical(v).toLowerCase());
+          if (match && match !== 'all') onSelectCommodity(match);
+          else onSelectCommodity('all');
+          setTimeout(() => setShowSuggestions(false), 120);
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            const v = e.currentTarget.value;
+            const match = uniqueCommodities.find(c => canonical(c).toLowerCase() === canonical(v).toLowerCase());
+            if (match && match !== 'all') onSelectCommodity(match);
+            else onSelectCommodity('all');
+          }
+        }}
+        style={{ paddingLeft: 36, minWidth: 260 }}
+      />
+      {showSuggestions && (() => {
+        const q = String(searchTerm || "").trim().toLowerCase();
+        const suggestions = uniqueCommodities.filter(c => c && c !== 'all' && c.toLowerCase().includes(q));
+        const limited = suggestions;
+        if (limited.length === 0) return null;
+        return (
+          <div style={{ position: 'absolute', top: '42px', left: 0, right: 'auto', zIndex: 1200, width: '100%', maxWidth: 520 }}>
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(2,6,23,0.08)', maxHeight: 200, overflowY: 'auto' }}>
+              {limited.map((c, i) => (
+                <div
+                  key={c + '_' + i}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => { onSearchChange({ target: { value: c } }); onSelectCommodity(c); setShowSuggestions(false); }}
+                  style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: i < limited.length - 1 ? '1px solid #f1f5f9' : 'none' }}
+                >
+                  {c}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+      {searchTerm && (
+        <button
+          onClick={() => { onSearchChange({ target: { value: "" } }); onSelectCommodity('all'); }}
+          style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: "4px", marginLeft: 4 }}
+        >
+          <X size={18} />
+        </button>
+      )}
+    </div>
+  );
+});
+
 // General table cell style alias used in main table rows
-import React, { useState, useMemo, useRef, useEffect } from "react";
-import { TrendingUp, TrendingDown, Search, X, ChevronLeft, ChevronRight, Download, Loader } from "lucide-react";
-import { generatePDF, generateWord } from "../services/reportGenerator";
-import { computePrevailingPrice } from "../services/prevailingCalculator";
-import { preloadData } from "../services/dataFetchService";
-import "../assets/ComparativeAnalysis.css";
 const tdStyle = modalTdStyle;
 
 // Helper to get month names
@@ -175,6 +238,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
   // Table filters for month/year (separate from report modal selections)
   const [selectedMonthFilter, setSelectedMonthFilter] = useState("");
   const [selectedYearFilter, setSelectedYearFilter] = useState("");
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState("");
   const [reportNarrative, setReportNarrative] = useState("");
   const [isNarrativeEdited, setIsNarrativeEdited] = useState(false);
   // Stores modal for aggregated buckets
@@ -195,8 +259,25 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
     if (initialFilters.store) {
       setSelectedStore(initialFilters.store);
     }
+    if (initialFilters.brand) {
+      setSelectedBrand(initialFilters.brand);
+    }
+    if (initialFilters.month) {
+      const normalizedMonth = normalizeMonthValue(initialFilters.month);
+      if (typeof normalizedMonth === 'number') {
+        setSelectedMonthFilter(String(normalizedMonth));
+      }
+    }
+    if (initialFilters.year) {
+      setSelectedYearFilter(String(initialFilters.year));
+    }
   }, [initialFilters]);
 
+  // OPTIMIZATION: Memoize search input handler to prevent unnecessary re-renders
+  const handleSearchChange = useCallback((e) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  }, []);
 
   // Handle null or undefined prices and support several shapes
   // If `monitoringData` is provided (processed dataset from Monitoring), prefer it as the source
@@ -281,7 +362,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
         }
       }
     };
-  }, [pricesArray.length, selectedCommodity, selectedStore, selectedBrand, searchTerm]);
+  }, [pricesArray.length, selectedCommodity, selectedStore, selectedBrand]);
 
   const availableYears = useMemo(() => {
     const years = new Set();
@@ -399,22 +480,13 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
   // Get combined data, filtered by selected month/year if set
   const getCombinedData = () => {
     try {
-      // OPTIMIZATION: For large datasets, limit processing to improve initial performance
-      const PROCESS_LIMIT = 2000;
-      const dataToProcess = pricesArray.length > PROCESS_LIMIT 
-        ? pricesArray.slice(0, PROCESS_LIMIT)
-        : pricesArray;
-      
-      if (dataToProcess.length > 0) {
-        console.log(`⚡ Processing ${dataToProcess.length}/${pricesArray.length} records`);
-      }
-      
       // Group by commodity and store
       // Respect table month/year filters when provided
       const monthFilterVal = selectedMonthFilter ? Number(selectedMonthFilter) : null;
       const yearFilterVal = selectedYearFilter ? Number(selectedYearFilter) : null;
+      
       // build a filtered list once so all subsequent passes respect the month/year table filters
-      const activePrices = dataToProcess.filter(item => {
+      const activePrices = pricesArray.filter(item => {
         if (!item || !item.commodity) return false;
         const mKey = normalizeMonthValue(item.month);
         const rawYear2 = (item.year ?? item.years) ?? (item.timestamp ? new Date(item.timestamp).getFullYear() : undefined);
@@ -630,57 +702,17 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
         const previousPrice = previousRec ? previousRec.price : null;
         const priceChange = (currentPrice !== null && previousPrice !== null) ? (currentPrice - previousPrice) : null;
         const percentChange = (previousPrice !== null && previousPrice !== 0 && priceChange !== null) ? ((priceChange / previousPrice) * 100) : null;
-<<<<<<< Updated upstream
-        
-        
-        // Prevailing price across this bucket (mode -> prefer highest price when tied -> fallback to highest price)
-        const freq = {};
-        const lastTs = {};
-        recs.forEach(r => {
-          const p = r.price;
-          if (p === null || p === undefined) return;
-          freq[p] = (freq[p] || 0) + 1;
-          lastTs[p] = Math.max(lastTs[p] || 0, r.ts || 0);
-        });
-        let prevailingPrice = null;
-        const counts = Object.values(freq);
-        const maxCount = counts.length ? Math.max(...counts) : 0;
-        if (maxCount > 1) {
-          // among prices with max frequency, choose the highest price; tie-break using latest timestamp
-          let bestPrice = -Infinity;
-          let bestTs = -1;
-          Object.keys(freq).forEach(pKey => {
-            const count = freq[pKey];
-            if (count === maxCount) {
-              const ts = lastTs[pKey] || 0;
-              const pNum = Number(pKey);
-              if (pNum > bestPrice || (pNum === bestPrice && ts > bestTs)) {
-                bestPrice = pNum;
-                bestTs = ts;
-              }
-            }
-          });
-          prevailingPrice = bestPrice === -Infinity ? null : bestPrice;
-        } else {
-          // fallback to highest price (tie-break by latest ts)
-          let best = { price: -Infinity, ts: -1 };
-          recs.forEach(r => {
-            if (r.price === null || r.price === undefined) return;
-            if (r.price > best.price || (r.price === best.price && (r.ts || 0) > (best.ts || 0))) {
-              best = { price: r.price, ts: r.ts || 0 };
-            }
-          });
-          prevailingPrice = best.price === -Infinity ? null : best.price;
-        }
 
+        
+        
         // SRP lookup using brand+size key then fallback to commodity
         const srpKey = `${bucket.commodity}__${bucket.brand || ""}__${bucket.size || ""}`;
         const srpEntry = srpLookup[srpKey] || srpLookup[bucket.commodity] || { value: 0 };
         const srp = srpEntry?.value || 0;
-        // Prevailing price rules moved to shared calculator: mode > highest, cap at SRP
+        
+        // Prevailing price rules: mode > highest, cap at SRP
         const prevailingPrice = computePrevailingPrice(recs, srp);
 
-<<<<<<< Updated upstream
         let statusType = "decreased";
         if (currentPrice !== null && previousPrice !== null) {
           if (currentPrice > previousPrice) {
@@ -741,6 +773,11 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
       if (selectedBrand !== "all") {
         const sb = canonical(selectedBrand);
         filtered = filtered.filter(item => canonical(item.brand) === sb);
+      }
+      
+      // Apply status filter
+      if (selectedStatusFilter) {
+        filtered = filtered.filter(item => item.statusType === selectedStatusFilter);
       }
       
       // Apply search filter across BRAND, COMMODITY, SIZE, STORE, YEAR, MONTH (CASE-SENSITIVE)
@@ -832,7 +869,7 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
       return getCombinedData();
     }
     return getCombinedData();
-  }, [pricesArray, selectedCommodity, selectedStore, searchTerm, srpLookup, prevailingLookup, selectedMonthFilter, selectedYearFilter]);
+  }, [pricesArray, selectedCommodity, selectedStore, selectedBrand, srpLookup, prevailingLookup, selectedMonthFilter, selectedYearFilter, selectedStatusFilter]);
 
   // Unique stores for store filter: derive from raw prices but respect selected commodity/brand.
   const uniqueStores = useMemo(() => {
@@ -978,15 +1015,23 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
   // Determine the source used for exports: when a month/year is selected use reportData, otherwise prefer filteredData then paginatedData
   const reportSource = (selectedReportMonth || selectedReportYear) ? reportData : (filteredData.length > 0 ? filteredData : paginatedData);
 
-
-  // Calculate summary statistics (use dataForAnalysis so it follows selected month/year)
-  const compliantCount = dataForAnalysis.filter(d => d.isCompliant).length;
-  const nonCompliantCount = dataForAnalysis.filter(d => !d.isCompliant).length;
-  const totalRecords = dataForAnalysis.length;
-  const complianceRate = totalRecords > 0 ? ((compliantCount / totalRecords) * 100).toFixed(1) : 0;
-  const avgPriceChangeAbs = totalRecords > 0
-    ? (dataForAnalysis.reduce((acc, curr) => acc + (curr.priceChange ?? 0), 0) / totalRecords).toFixed(2)
-    : "0.00";
+  // OPTIMIZATION: Memoize summary statistics calculations
+  const stats = useMemo(() => {
+    if (dataForAnalysis.length === 0) {
+      return {
+        compliantCount: 0, nonCompliantCount: 0, totalRecords: 0, complianceRate: 0,
+        avgPriceChangeAbs: "0.00", topIncrease: null, topDecrease: null,
+        higherPreviousCount: 0, higherSRPCount: 0, decreasedCount: 0, stableCount: 0
+      };
+    }
+    
+    const compliantCount = dataForAnalysis.filter(d => d.isCompliant).length;
+    const nonCompliantCount = dataForAnalysis.filter(d => !d.isCompliant).length;
+    const totalRecords = dataForAnalysis.length;
+    const complianceRate = totalRecords > 0 ? ((compliantCount / totalRecords) * 100).toFixed(1) : 0;
+    const avgPriceChangeAbs = totalRecords > 0
+      ? (dataForAnalysis.reduce((acc, curr) => acc + (curr.priceChange ?? 0), 0) / totalRecords).toFixed(2)
+      : "0.00";
 
     const [topIncrease] = [...dataForAnalysis].sort((a, b) => ((b.priceChange !== null && b.priceChange !== undefined) ? b.priceChange : -Infinity) - ((a.priceChange !== null && a.priceChange !== undefined) ? a.priceChange : -Infinity));
     const [topDecrease] = [...dataForAnalysis].sort((a, b) => ((a.priceChange !== null && a.priceChange !== undefined) ? a.priceChange : Infinity) - ((b.priceChange !== null && b.priceChange !== undefined) ? b.priceChange : Infinity));
@@ -1028,18 +1073,13 @@ export default function ComparativeAnalysis({ prices, monitoringData = null, pre
     const topMovers = topIncrease ? `The highest increase was ${topIncrease.commodity} at ${topIncrease.store} (₱${topIncreaseAmount.toFixed(2)}).` : "No data available";
     const topDecr = (topDecrease && topDecreaseAmount !== 0) ? `The largest decrease was ${topDecrease.commodity} at ${topDecrease.store} (₱${topDecreaseAmount.toFixed(2)}).` : "";
 
-    // Only report average when we have realistic numeric data
-    const avgSentence = avgPriceChange !== null
-      ? `the average price change is ${avgPriceChange > 0 ? '+' : avgPriceChange < 0 ? '-' : ''}₱${Math.abs(avgPriceChange).toFixed(2)} (n=${validCount}).`
-      : `insufficient numeric data to compute average price change.`;
-
     return `
-Summary: Across ${totalRecords} monitored products, ${avgSentence}
+Summary: Across ${totalRecords} monitored products, the average price change is ${avgChangeSign}₱${avgChangeValue}.
 Status breakdown: ${higherPreviousCount} higher than previous price, ${higherSRPCount} higher than SRP, ${decreasedCount} decreased.
 
 Top Movers: ${topMovers} ${topDecr}
 `;
-  }, [selectedReportMonth, selectedReportYear, MONTHS, totalRecords, avgPriceChange, validCount, higherPreviousCount, higherSRPCount, decreasedCount, topIncrease, topDecrease, topIncreaseAmount, topDecreaseAmount]);
+  }, [totalRecords, avgChangeSign, avgChangeValue, higherPreviousCount, higherSRPCount, decreasedCount, topIncrease, topDecrease, topIncreaseAmount, topDecreaseAmount]);
 
   useEffect(() => {
     if (!isNarrativeEdited) {
@@ -1204,76 +1244,32 @@ Top Movers: ${topMovers} ${topDecr}
                   <option key={y} value={y}>{y}</option>
                 ))}
               </select>
+              <select
+                className="ca-select"
+                value={selectedStatusFilter}
+                onChange={e => { setSelectedStatusFilter(e.target.value); setCurrentPage(1); }}
+                style={{ minWidth: 160 }}
+              >
+                <option value="">Status</option>
+                <option value="higher-than-previous">Higher than Previous</option>
+                <option value="higher-than-srp">Higher than SRP</option>
+                <option value="decreased">Decreased</option>
+                <option value="stable">Stable</option>
+              </select>
             </div>
           </div>
         </div>
         {/* Search Bar with commodity datalist embedded */}
         <div className="ca-search-row">
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, minWidth: 360, marginRight: 8 }}>
-            <Search size={18} color="#64748b" style={{ position: 'absolute', left: 10 }} />
-            <input
-              type="text"
-              className="ca-search-input"
-              placeholder="Enter commodity"
-              value={searchTerm}
-              onFocus={() => setShowSuggestions(true)}
-              onChange={e => {
-                const v = e.target.value;
-                setSearchTerm(v);
-                setCurrentPage(1);
-              }}
-              onBlur={e => {
-                const v = e.target.value;
-                const match = uniqueCommodities.find(c => canonical(c).toLowerCase() === canonical(v).toLowerCase());
-                if (match && match !== 'all') setSelectedCommodity(match);
-                else setSelectedCommodity('all');
-                // delay hiding to allow click on suggestion
-                setTimeout(() => setShowSuggestions(false), 120);
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  const v = e.currentTarget.value;
-                  const match = uniqueCommodities.find(c => canonical(c).toLowerCase() === canonical(v).toLowerCase());
-                  if (match && match !== 'all') setSelectedCommodity(match);
-                  else setSelectedCommodity('all');
-                }
-              }}
-              style={{ paddingLeft: 36, minWidth: 260 }}
-            />
-            {showSuggestions && (
-              (() => {
-                const q = String(searchTerm || "").trim().toLowerCase();
-                const suggestions = uniqueCommodities.filter(c => c && c !== 'all' && c.toLowerCase().includes(q));
-                // show all matching suggestions; the container keeps its size via maxHeight and scroll
-                const limited = suggestions;
-                if (limited.length === 0) return null;
-                return (
-                  <div style={{ position: 'absolute', top: '42px', left: 0, right: 'auto', zIndex: 1200, width: '100%', maxWidth: 520 }}>
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(2,6,23,0.08)', maxHeight: 200, overflowY: 'auto' }}>
-                      {limited.map((c, i) => (
-                        <div
-                          key={c + '_' + i}
-                          onMouseDown={e => e.preventDefault()}
-                          onClick={() => { setSearchTerm(c); setSelectedCommodity(c); setShowSuggestions(false); setCurrentPage(1); }}
-                          style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: i < limited.length - 1 ? '1px solid #f1f5f9' : 'none' }}
-                        >
-                          {c}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()
-            )}
-            {searchTerm && (
-              <button
-                onClick={() => { setSearchTerm(""); setCurrentPage(1); setSelectedCommodity('all'); }}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: "4px", marginLeft: 4 }}
-              >
-                <X size={18} />
-              </button>
-            )}
-          </div>
+          <SearchInput
+            searchTerm={searchTerm}
+            onSearchChange={handleSearchChange}
+            showSuggestions={showSuggestions}
+            setShowSuggestions={setShowSuggestions}
+            uniqueCommodities={uniqueCommodities}
+            canonical={canonical}
+            onSelectCommodity={setSelectedCommodity}
+          />
           <select
             className="ca-select"
             value={selectedBrand}
